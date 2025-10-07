@@ -12,21 +12,6 @@ from functools import wraps
 # ---------------------------------------------- Flask Setup ----------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 application = Flask(__name__)
-API_KEY = os.environ.get("API_KEY", "rnd_AaaBTvFytZPWhX0UnhL6atlLmGKF")
-
-# ---------------------------------------------------------------------------------------------------------------------#
-# ----------------------------------- API Key Decorator ---------------------------------------------------------------#
-# ---------------------------------------------------------------------------------------------------------------------#
-def require_api_key(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if request.headers.get('API-KEY') and request.headers.get('API-KEY') == API_KEY:
-            return f(*args, **kwargs)
-        else:
-            return jsonify({"error": "Unauthorized. A valid API key is required in the 'X-API-KEY' header."}), 401
-    return decorated_function
-
-# (Your data loading and helper functions remain unchanged)
 # ---------------------------------------------------------------------------------------------------------------------#
 # -------------------------------------------- Load Data and Models ---------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
@@ -150,7 +135,6 @@ def health_check():
 
 
 @application.route('/api/recommend/user', methods=['POST'])
-@require_api_key
 def api_recommend_user():
     try:
         book_ratings = request.get_json()
@@ -170,7 +154,6 @@ def api_recommend_user():
 
 
 @application.route('/api/recommend/genre', methods=['POST'])
-@require_api_key
 def api_recommend_genre():
     try:
         data = request.get_json()
