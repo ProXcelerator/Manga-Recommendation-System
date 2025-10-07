@@ -1,9 +1,10 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, jsonify
 import pandas as pd
 import numpy as np
 import joblib
 from collections import Counter
 import time # Import time for logging
+import traceback # Import for detailed error logging
 
 # ---------------------------------------------------------------------------------------------------------------------#
 # ---------------------------------------------- Flask Setup ----------------------------------------------------------#
@@ -73,90 +74,58 @@ def recommend_manga_by_genre(genres, top_n=5):
     
     return top_manga[['Title', 'Score', 'Genres', 'Link', 'Thumbnail']]
 
+# --- THIS FUNCTION USES THE PURE KNN-BASED ALGORITHM WITHOUT GENRE FILTERING ---
 def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sparse, top_n=5):
-    start_time = time.time()
-    print(f"--- LOG: Starting recommendation process at {start_time:.2f} ---")
-
-    # --- Tier 1: Attempt Hybrid KNN + Genre Filtering ---
+    """
+    Recommends manga based on a new user's ratings using a direct KNN approach.
+    It finds similar users and recommends the items they rated most highly.
+    """
+    print("--- LOG: Using direct KNN recommendation algorithm (no genre filter). ---")
+    
+    # 1. Prepare the new user's data
     new_user_avg_rating = np.mean(list(new_user_ratings.values()))
     num_items = interaction_sparse.shape[1]
     new_user_vector = np.zeros(num_items)
-    rated_title_ids, input_manga_titles = [], []
+    rated_title_ids = []
 
     for title, rating in new_user_ratings.items():
         if title in title_name_map:
             title_id = title_name_map[title]
             new_user_vector[title_id] = rating - new_user_avg_rating
             rated_title_ids.append(title_id)
-            input_manga_titles.append(title)
     
+    # 2. Find similar users using KNN
     new_user_reduced = svd.transform(new_user_vector.reshape(1, -1))
     distances, indices = nn_model.kneighbors(new_user_reduced, n_neighbors=20)
+    similar_user_indices = indices.flatten()
+
+    # 3. Aggregate scores from similar users to predict ratings for the new user
+    similarity_scores = 1 - distances.flatten()
     
-    candidate_title_ids = set()
-    similar_user_ratings = interaction_sparse[indices.flatten()]
-    for i in range(similar_user_ratings.shape[0]):
-        user_row = similar_user_ratings.getrow(i)
-        positive_mask = user_row.data > 0
-        candidate_title_ids.update(user_row.indices[positive_mask])
+    # Calculate the weighted average of similar users' centered ratings
+    predicted_centered_scores = interaction_sparse[similar_user_indices].T.dot(similarity_scores)
     
-    candidate_title_ids.difference_update(rated_title_ids)
+    # Normalize by the sum of similarities
+    sum_of_similarities = np.sum(similarity_scores)
+    if sum_of_similarities > 0:
+        predicted_centered_scores /= sum_of_similarities
     
-    if candidate_title_ids:
-        all_user_genres_list = []
-        input_manga_genres_df = manga_data[manga_data['Title'].isin(input_manga_titles)]['Genres'].dropna()
-        for genre_list in input_manga_genres_df.str.split(','):
-            all_user_genres_list.extend([g.strip().lower() for g in genre_list])
+    # 4. De-center the predictions to get the final score
+    final_scores = new_user_avg_rating + predicted_centered_scores
+    
+    # 5. Filter out already rated items and get top recommendations
+    final_scores[rated_title_ids] = -np.inf # Set score of rated items to be very low
+    top_indices = np.argsort(final_scores)[-top_n:][::-1]
 
-        if all_user_genres_list:
-            genre_counts = Counter(all_user_genres_list)
-            required_genres = {genre for genre, count in genre_counts.items() if count > 1}
-            
-            candidate_df = manga_data[manga_data['Title'].isin([title_id_map.get(i) for i in candidate_title_ids])].copy()
-            final_candidates = pd.DataFrame()
-
-            if required_genres:
-                mask = candidate_df['Genre_Set'].apply(required_genres.issubset)
-                final_candidates = candidate_df[mask]
-
-            if final_candidates.empty:
-                user_genres_set = set(all_user_genres_list)
-                if user_genres_set:
-                    mask = candidate_df['Genre_Set'].apply(lambda x: not x.isdisjoint(user_genres_set))
-                    final_candidates = candidate_df[mask]
-
-            # If genre filtering produced results, return them
-            if not final_candidates.empty:
-                print("--- LOG: Success with Primary Hybrid Method. ---")
-                top_recommendations = final_candidates.sort_values(by='Score', ascending=False).head(top_n)
-                return top_recommendations['Title'].tolist()
-
-    # --- Tier 2: Fallback to KNN without Genre Filter ---
-    print("--- LOG: Primary method failed. Falling back to KNN without genre filter. ---")
-    if candidate_title_ids:
-        candidate_df = manga_data[manga_data['Title'].isin([title_id_map.get(i) for i in candidate_title_ids])].copy()
-        top_recommendations = candidate_df.sort_values(by='Score', ascending=False).head(top_n)
-        return top_recommendations['Title'].tolist()
-
-    # --- Tier 3: Fallback to Content-Based (Most Common Genre) ---
-    print("--- LOG: KNN failed. Falling back to most common genre. ---")
-    if 'all_user_genres_list' in locals() and all_user_genres_list:
-        most_common_genre = Counter(all_user_genres_list).most_common(1)[0][0]
-        print(f"--- LOG: Most common genre is '{most_common_genre}'. ---")
-        genre_recommendations = manga_data[
-            manga_data['Genre_Set'].apply(lambda x: most_common_genre in x) &
-            (~manga_data['Title'].isin(input_manga_titles))
-        ].sort_values(by='Score', ascending=False).head(top_n)
-        return genre_recommendations['Title'].tolist()
-
-    # --- Tier 4: Ultimate Fallback to Global Top Rated ---
-    print("--- LOG: All methods failed. Falling back to global top rated. ---")
-    top_rated = manga_data[~manga_data['Title'].isin(input_manga_titles)].sort_values(by='Score', ascending=False).head(top_n)
-    return top_rated['Title'].tolist()
+    # Convert title IDs back to names
+    recommended_titles = [title_id_map.get(i) for i in top_indices if title_id_map.get(i) is not None]
+    
+    print(f"--- LOG: Found recommendations: {recommended_titles} ---")
+    return recommended_titles
 
 
 # ---------------------------------------------------------------------------------------------------------------------#
-# -------------------------------------------- Flask Routes ----------------------------------------------------------#
+# --------------------------------------- WEBSITE ROUTES (Existing Code) ----------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 @application.route('/')
 def home():
@@ -203,23 +172,86 @@ def mangaRecommendation():
                         return "Invalid input. Please enter a number for ratings.", 400
 
             if book_ratings:
-                print(f"--- LOG: Received book ratings: {book_ratings} ---")
-                recommended_titles = recommend_books_for_new_user(book_ratings, nn_model, svd, interaction_sparse, top_n=5)
-                print(f"--- LOG: Function returned: {recommended_titles} ---")
-                for title in recommended_titles:
-                    manga_row = manga_data[manga_data['Title'] == title]
-                    if not manga_row.empty:
-                        row = manga_row.iloc[0]
-                        manga_list.append({
-                            "title": row['Title'], "url": row['Link'],
-                            "thumbnail": row['Thumbnail'], "score": row['Score']
-                        })
-                    else:
-                        manga_list.append({
-                            "title": title, "url": "#", "thumbnail": "https://via.placeholder.com/150x225", "score": "N/A"
-                        })
+                try:
+                    recommended_titles = recommend_books_for_new_user(book_ratings, nn_model, svd, interaction_sparse, top_n=5)
+                    for title in recommended_titles:
+                        manga_row = manga_data[manga_data['Title'] == title]
+                        if not manga_row.empty:
+                            row = manga_row.iloc[0]
+                            manga_list.append({
+                                "title": row['Title'], "url": row['Link'],
+                                "thumbnail": row['Thumbnail'], "score": row['Score']
+                            })
+                        else:
+                            manga_list.append({
+                                "title": title, "url": "#", "thumbnail": "https://via.placeholder.com/150x225", "score": "N/A"
+                            })
+                except Exception as e:
+                    print(f"Error during recommendation: {e}")
+                    traceback.print_exc()
+                    # Optionally, you can pass an error message to the template
+                    # return render_template("manga_recommendation.html", genres=genres, error="Could not generate recommendations.")
 
     return render_template("manga_recommendation.html", genres=genres, recommendations=manga_list)
+
+# ---------------------------------------------------------------------------------------------------------------------#
+# -------------------------------------- API ROUTES (For Mobile App) --------------------------------------------------#
+# ---------------------------------------------------------------------------------------------------------------------#
+
+@application.route('/api/recommend/user', methods=['POST'])
+def api_recommend_user():
+    """
+    API endpoint for user-based recommendations.
+    Expects JSON input: {"Manga Title 1": 8, "Manga Title 2": 9}
+    Returns JSON output.
+    """
+    try:
+        book_ratings = request.get_json()
+        if not book_ratings:
+            return jsonify({"error": "Invalid input. Please provide ratings in JSON format."}), 400
+
+        recommended_titles = recommend_books_for_new_user(book_ratings, nn_model, svd, interaction_sparse, top_n=10)
+        
+        results = []
+        for title in recommended_titles:
+            manga_row = manga_data[manga_data['Title'] == title]
+            if not manga_row.empty:
+                row = manga_row.iloc[0]
+                results.append({
+                    "title": row['Title'],
+                    "url": row['Link'],
+                    "thumbnail": row['Thumbnail'],
+                    "score": row['Score'],
+                    "genres": row['Genres']
+                })
+        return jsonify(results)
+    except Exception as e:
+        print(f"!!! SERVER ERROR in /api/recommend/user: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred while generating recommendations."}), 500
+
+
+@application.route('/api/recommend/genre', methods=['POST'])
+def api_recommend_genre():
+    """
+    API endpoint for genre-based recommendations.
+    Expects JSON input: {"genres": ["Action", "Fantasy"]}
+    Returns JSON output.
+    """
+    try:
+        data = request.get_json()
+        if not data or 'genres' not in data:
+            return jsonify({"error": "Invalid input. Please provide a 'genres' list."}), 400
+
+        selected_genres = data['genres']
+        recommendations_df = recommend_manga_by_genre(selected_genres, top_n=10)
+        
+        results = recommendations_df.to_dict(orient='records')
+        return jsonify(results)
+    except Exception as e:
+        print(f"!!! SERVER ERROR in /api/recommend/genre: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred."}), 500
 
 # Run the app
 if __name__ == '__main__':
