@@ -74,16 +74,15 @@ def recommend_manga_by_genre(genres, top_n=5):
     
     return top_manga[['Title', 'Score', 'Genres', 'Link', 'Thumbnail']]
 
-# --- THIS FUNCTION USES THE PURE KNN-BASED ALGORITHM WITHOUT GENRE FILTERING ---
+# --- THIS FUNCTION IS REPLACED TO MIMIC THE ALGORITHM FROM VERSION 1 ---
 def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sparse, top_n=5):
     """
-    Recommends manga based on a new user's ratings using a direct KNN approach.
-    It finds similar users and recommends the items they rated most highly.
+    Recommends manga based on a new user's ratings using the collaborative filtering
+    logic from the first version of the application.
     """
-    print("--- LOG: Using direct KNN recommendation algorithm (no genre filter). ---")
+    print("--- LOG: Using V1-style recommendation algorithm (raw user input, weighted average). ---")
     
-    # 1. Prepare the new user's data
-    new_user_avg_rating = np.mean(list(new_user_ratings.values()))
+    # 1. Prepare the new user's data as a raw rating vector (like in V1)
     num_items = interaction_sparse.shape[1]
     new_user_vector = np.zeros(num_items)
     rated_title_ids = []
@@ -91,36 +90,43 @@ def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sp
     for title, rating in new_user_ratings.items():
         if title in title_name_map:
             title_id = title_name_map[title]
-            new_user_vector[title_id] = rating - new_user_avg_rating
+            new_user_vector[title_id] = rating  # Use raw rating, not centered
             rated_title_ids.append(title_id)
-    
-    # 2. Find similar users using KNN
-    new_user_reduced = svd.transform(new_user_vector.reshape(1, -1))
-    distances, indices = nn_model.kneighbors(new_user_reduced, n_neighbors=20)
-    similar_user_indices = indices.flatten()
+            
+    if not rated_title_ids:
+        return []
 
-    # 3. Aggregate scores from similar users to predict ratings for the new user
+    # 2. Transform the new user's raw ratings vector into the latent space
+    # Note: The SVD model was trained on centered data, but we pass raw data to match V1's logic.
+    new_user_latent_vector = svd.transform(new_user_vector.reshape(1, -1))
+    
+    # 3. Find similar users using KNN
+    distances, indices = nn_model.kneighbors(new_user_latent_vector, n_neighbors=20)
+    similar_user_indices = indices.flatten()
+    
+    # 4. Calculate the weighted average of similar users' ratings
     similarity_scores = 1 - distances.flatten()
     
-    # Calculate the weighted average of similar users' centered ratings
-    predicted_centered_scores = interaction_sparse[similar_user_indices].T.dot(similarity_scores)
+    # Use matrix multiplication for an efficient weighted sum calculation
+    similar_users_ratings = interaction_sparse[similar_user_indices]
+    weighted_sum = similarity_scores.dot(similar_users_ratings.toarray())
     
-    # Normalize by the sum of similarities
-    sum_of_similarities = np.sum(similarity_scores)
-    if sum_of_similarities > 0:
-        predicted_centered_scores /= sum_of_similarities
+    similarity_sum = np.sum(similarity_scores)
     
-    # 4. De-center the predictions to get the final score
-    final_scores = new_user_avg_rating + predicted_centered_scores
+    # 5. Normalize to get the final predicted scores
+    if similarity_sum > 0:
+        predicted_scores = weighted_sum / similarity_sum
+    else:
+        predicted_scores = np.zeros(num_items)
     
-    # 5. Filter out already rated items and get top recommendations
-    final_scores[rated_title_ids] = -np.inf # Set score of rated items to be very low
-    top_indices = np.argsort(final_scores)[-top_n:][::-1]
+    # 6. Filter out already rated items and get top recommendations
+    predicted_scores[rated_title_ids] = -np.inf  # Set score of rated items to be very low
+    top_indices = np.argsort(predicted_scores)[-top_n:][::-1]
 
-    # Convert title IDs back to names
+    # 7. Convert title IDs back to names
     recommended_titles = [title_id_map.get(i) for i in top_indices if title_id_map.get(i) is not None]
     
-    print(f"--- LOG: Found recommendations: {recommended_titles} ---")
+    print(f"--- LOG: Found recommendations (V1 logic): {recommended_titles} ---")
     return recommended_titles
 
 
@@ -256,4 +262,3 @@ def api_recommend_genre():
 # Run the app
 if __name__ == '__main__':
     application.run(host="localhost", port=5000, debug=True)
-
