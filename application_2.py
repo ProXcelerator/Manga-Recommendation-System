@@ -150,7 +150,6 @@ def health_check():
 
 
 @application.route('/api/recommend/user', methods=['POST'])
-@require_api_key
 def api_recommend_user():
     try:
         book_ratings = request.get_json()
@@ -170,7 +169,6 @@ def api_recommend_user():
 
 
 @application.route('/api/recommend/genre', methods=['POST'])
-@require_api_key
 def api_recommend_genre():
     try:
         data = request.get_json()
