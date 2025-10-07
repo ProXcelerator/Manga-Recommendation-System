@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manga Recommendations</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400&display=swap');
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            padding-bottom: 50px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            background-color: #f1f1f1;
+        }
+        .light-blue-box {
+            width: 100%;
+            background-color: #dfdfdf;
+            height: 400px;
+            margin-top: 50px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: -1;
+        }
+        .profile-container {
+            text-align: center;
+            padding: 0;
+            margin-top: 20px;
+        }
+        .profile-img {
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            border: 5px solid #ccc;
+            object-fit: cover;
+            margin-top: 50px;
+        }
+        .profile-title {
+            font-family: 'Lora';
+            font-size: 3rem;
+            font-weight: 700;
+            margin-top: 20px;
+            letter-spacing: 2px;
+        }
+        .profile-subtitle {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-top: 10px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        .profile-description {
+            max-width: 90%;
+            margin: 20px auto;
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #444;
+        }
+        @media (min-width: 768px) {
+            .profile-description {
+                max-width: 1200px; /* For larger screens, limit the text width */
+                font-size: 1.2rem; /* Increase font size for better readability */
+            }
+        }
+        .link-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background-color: #ffffff;
+            padding: 10px 0;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+        .link-button {
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            background-color: #667a91;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background-color 1s, transform 1s;
+        }
+        .link-button:hover {
+            background-color: #0057b30a;
+            color: #ffffff09;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    
+    <div class="link-container">
+        <a href="/projects" class="link-button">Projects</a>
+        <a href="/resume" class="link-button">Resume</a>
+        <a href="/manga_recommendation" class="link-button">Manga Recommendation System</a>
+    </div>
+
+    <div class="light-blue-box"></div>
+        <div class="profile-container">
+            <img src="/static/profile_image.jpg" alt="Profile Photo" class="profile-img">
+            <div class="profile-title"><span style="font-weight: 400;">Creative</span> <span style="font-weight: 700;">Portfolio</span></div>
+            <div class="profile-subtitle">Data Scientist</div>
+            <div class="profile-description">
+                <h1>Hey, I’m Taylor Baker — Welcome to My Space!</h1>
+            
+                <h2>Academic Journey</h2>
+                <p>I’m currently wrapping up my Master’s Degree in Data Science at Eastern University, set to graduate in December 2024. But my path here wasn’t exactly straight. My first degree was in fine art, where I learned to think creatively and approach problems from fresh perspectives. When COVID hit, I started taking online courses to explore something new, and that something turned out to be data science. Without anyone in my circle working in tech, I relied on self-study, stacking certifications in Data Science and Machine Learning/AI Engineering. Those early wins fueled my passion, and every late-night breakthrough reminded me I was on the right path.</p>
+            
+                <h2>Professional Interests</h2>
+                <p>I’m passionate about machine learning, AI development, and making sure these systems are fair, inclusive, and accountable. For me, it’s not just about getting models to “work”, it’s about who they work for. I aim to build AI that benefits everyone, not just a select few. With hands-on experience in Python, SQL, and TensorFlow, I’m drawn to projects where I can solve challenging problems while ensuring the solutions are as ethical as they are effective. I’m especially interested in exploring how AI can be designed with transparency and accountability at its core.</p>
+            
+                <h2>The Human Behind the Code</h2>
+                <p>At my core, I’m a curious problem-solver. Growing up, I was always fascinated by technology, but I didn’t have anyone around me working in tech, so I didn't know it was something I would enjoy. It wasn’t until I stumbled into coding during the pandemic that I realized this world was for me. That same drive to “figure things out” is what fuels my love for data science today. I’m constantly tinkering, learning, and asking, <em>“What if…?”</em> That curiosity shows up in my personal projects, like the user to user-based manga recommendation system I’m building using K-Nearest Neighbors. It’s a perfect mix of my technical skills and my love for storytelling.</p>
+            
+        </div>
+    </div>
+
+
+</body>
+</html>

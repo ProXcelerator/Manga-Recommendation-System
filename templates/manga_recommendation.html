@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manga Recommendations</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400&display=swap');
+        * {
+        box-sizing: border-box; /* Includes padding, borders, and shadow in width/height */
+    }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            text-align: center;           
+            margin: 0 ;
+            padding: 0;
+            margin-top: 60px;
+            padding-bottom: 100px;
+        }
+        .input-container {
+            margin: 30px 0;
+            text-align: left;
+            margin-left: 10%;
+            margin-right: 10%;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            font-weight: bold;
+        }
+        input[type="text"], input[type="number"], select {
+            padding: 10px;
+            font-size: 1em;
+            width: calc(100% - 20px);
+            max-width: 400px;
+            margin-top: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            background-color: #667a91;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background-color 1s, transform 1s;
+        }
+        button:hover {
+            background-color: #0057b30a;
+            color: #ffffff09;
+            transform: scale(1.05);
+        }
+        .recommendations {
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .recommendation-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .recommendation-box {
+            display: block;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            width: 150px;
+            text-align: center;
+            text-decoration: none;
+            color: inherit;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .recommendation-box:hover {
+            transform: scale(1.05);
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .recommendation-box img {
+            width: 100%;
+            height: auto;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .recommendation-box h3 {
+            font-size: 1em;
+            color: #007BFF;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .recommendation-box p {
+            margin-top: 5px;
+            font-size: 0.9em;
+            color: #333;
+        }
+        .link-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;            
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background-color: #ffffff;
+            padding: 10px 0;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            margin: 0;
+        }
+        .link-button {
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            background-color: #667a91;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background-color 1s, transform 1s;
+        }
+        .link-button:hover {
+            background-color: #0057b30a;
+            color: #ffffff09;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <h1>Manga Recommendation System</h1>
+    <div class="link-container">
+        <a href="/projects" class="link-button">Projects</a>
+        <a href="/resume" class="link-button">Resume</a>
+        <a href="/" class="link-button">Home</a>
+    </div>
+
+    <div class="input-container">
+        <form method="POST" action="/manga_recommendation">
+            <!-- Genre Selection -->
+            <h2>Select Genres for Recommendations</h2>
+            <p style="margin-top: 30px; font-size: 1.2em; color: #555;">
+                If you have not read any manga and are starting from scratch. Select from the drop down menu and 
+                pick a genre that you like. You can choose 1 to 3 genres and it will recommend 5 popular manga
+                that contain the genres you selected. 
+            </p>
+            <div class="input-group">
+                <label for="genre_1">Genre 1:</label>
+                <select id="genre_1" name="genre_1">
+                    <option value="">-- Select Genre --</option>
+                    {% for genre in genres %}
+                    <option value="{{ genre }}">{{ genre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="genre_2">Genre 2:</label>
+                <select id="genre_2" name="genre_2">
+                    <option value="">-- Select Genre --</option>
+                    {% for genre in genres %}
+                    <option value="{{ genre }}">{{ genre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="genre_3">Genre 3:</label>
+                <select id="genre_3" name="genre_3">
+                    <option value="">-- Select Genre --</option>
+                    {% for genre in genres %}
+                    <option value="{{ genre }}">{{ genre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Ratings Input -->
+            <h2>Rate Manga You Have Read</h2>
+            <p style="margin-top: 30px; font-size: 1.2em; color: #555;">
+                You can enter between 1 and 5 manga that you have read and you can rate each one between 0-10. 
+                This will give you a list of 5 manga recommendations based off 30,000 users data. If you don't 
+                like your recommendations or what to mix it up, change the ratings and you will get different results. 
+            </p>
+            <div id="input-groups">
+                <div class="input-group">
+                    <label for="manga_1">Manga Title 1:</label>
+                    <input type="text" id="manga_1" name="manga_1">
+                    <label for="rating_1">Rating (0-10):</label>
+                    <input type="number" id="rating_1" name="rating_1" min="0" max="10">
+                </div>
+                <div class="input-group">
+                    <label for="manga_2">Manga Title 2:</label>
+                    <input type="text" id="manga_2" name="manga_2">
+                    <label for="rating_2">Rating (0-10):</label>
+                    <input type="number" id="rating_2" name="rating_2" min="0" max="10">
+                </div>
+                <div class="input-group">
+                    <label for="manga_3">Manga Title 3:</label>
+                    <input type="text" id="manga_3" name="manga_3">
+                    <label for="rating_3">Rating (0-10):</label>
+                    <input type="number" id="rating_3" name="rating_3" min="0" max="10">
+                </div>
+                <div class="input-group">
+                    <label for="manga_4">Manga Title 4:</label>
+                    <input type="text" id="manga_4" name="manga_4">
+                    <label for="rating_4">Rating (0-10):</label>
+                    <input type="number" id="rating_4" name="rating_4" min="0" max="10">
+                </div>
+                <div class="input-group">
+                    <label for="manga_5">Manga Title 5:</label>
+                    <input type="text" id="manga_5" name="manga_5">
+                    <label for="rating_5">Rating (0-10):</label>
+                    <input type="number" id="rating_5" name="rating_5" min="0" max="10">
+                </div>
+            </div>
+            <button type="submit">Get Recommendations</button>
+        </form>
+    </div>
+
+    {% if recommendations %}
+    <div class="recommendations">
+        <h2>Recommended Manga for You:</h2>
+        <div class="recommendation-container">
+            {% for manga in recommendations %}
+            <a href="{{ manga.url }}" target="_blank" class="recommendation-box">
+                <img src="{{ manga.thumbnail }}" alt="{{ manga.title }}">
+                <h3>{{ manga.title }}</h3>
+                <p>Score: {{ manga.score }}</p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</body>
+</html>
