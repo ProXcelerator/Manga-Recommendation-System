@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 from collections import Counter
+import time # Import time for logging
 
 # ---------------------------------------------------------------------------------------------------------------------#
 # ---------------------------------------------- Flask Setup ----------------------------------------------------------#
@@ -18,17 +19,26 @@ print("Loading data and models for the recommender system...")
 manga_image_links_df = pd.read_csv('title-link-image-score-eng-title.csv')
 
 # Load dataset containing manga and genres for the genre-based recommendations
-manga_data = pd.read_csv('manga_list_3.csv')
-manga_data['Title'] = manga_data['Link'].apply(lambda x: x.split('/')[-1].replace('_', ' '))
+manga_data_raw = pd.read_csv('manga_list_3.csv')
+manga_data_raw['Title'] = manga_data_raw['Link'].apply(lambda x: x.split('/')[-1].replace('_', ' '))
 
-# --- ADDED FEATURE: Prevent duplicate manga by cleaning data on load ---
+# --- FIX: Merge data sources into a single, reliable dataframe ---
+image_df_subset = manga_image_links_df[['Title', 'Image Link', 'Score_y']].copy()
+image_df_subset.rename(columns={'Image Link': 'Thumbnail', 'Score_y': 'Display Score'}, inplace=True)
+manga_data = pd.merge(manga_data_raw, image_df_subset, on='Title', how='left')
+manga_data['Thumbnail'] = manga_data['Thumbnail'].str.replace('/r/50x70', '', regex=False).fillna("https://via.placeholder.com/150x225")
+manga_data['Score'] = manga_data['Display Score'].fillna(manga_data['Score'])
 manga_data.drop_duplicates(subset=['Title'], keep='first', inplace=True)
-manga_image_links_df.drop_duplicates(subset=['Title'], keep='first', inplace=True)
+
+# --- OPTIMIZATION: Pre-process genres for faster filtering ---
+manga_data['Genre_Set'] = manga_data['Genres'].str.lower().str.split(',').apply(
+    lambda g_list: set(g.strip() for g in g_list) if isinstance(g_list, list) else set()
+)
 
 # Load the NEW mean-centered models and data files
 interaction_sparse = joblib.load('interaction_sparse_centered.pkl')
 svd = joblib.load('svd_model_centered.pkl')
-nn_model = joblib.load('nn_model_centered.pkl') # Re-loading the KNN model for this approach
+nn_model = joblib.load('nn_model_centered.pkl') 
 user_means = joblib.load('user_means.pkl')
 user_id_map = joblib.load('user_id_map.pkl')
 title_id_map = joblib.load('title_id_map.pkl')
@@ -42,118 +52,105 @@ print("All files loaded successfully.")
 # ----------------------------------- Helper Functions (UPDATED) ------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 
-# --- THIS FUNCTION IS UPDATED FOR MORE ACCURATE GENRE MATCHING ---
 def recommend_manga_by_genre(genres, top_n=5):
-    """
-    Recommends manga by prioritizing titles that match more of the selected genres.
-    """
     if not genres or not isinstance(genres, list):
-        return pd.DataFrame() # Return empty DataFrame on error
+        return pd.DataFrame() 
 
-    # First, efficiently filter the DataFrame to only include manga that contain at least one of the selected genres.
-    # We use .copy() to avoid potential SettingWithCopyWarning later.
     initial_filter = manga_data[
         manga_data['Genres'].notna() & manga_data['Genres'].str.contains('|'.join(genres), case=False, na=False)
     ].copy()
 
-    # If no manga match, return an empty frame.
     if initial_filter.empty:
         return pd.DataFrame()
 
-    # Second, calculate how many of the selected genres each manga actually contains.
-    # This creates a 'match_count' that we can use to rank relevance.
     initial_filter['match_count'] = initial_filter['Genres'].apply(
         lambda manga_genres: sum(g.lower() in manga_genres.lower() for g in genres)
     )
 
-    # Finally, sort the results. Prioritize the highest match_count first (most relevant),
-    # and then use the Score as a tie-breaker (most popular).
     top_manga = initial_filter.sort_values(
         by=['match_count', 'Score'], ascending=[False, False]
     ).head(top_n)
     
-    return top_manga[['Title', 'Score', 'Genres', 'Link', 'Image Link']]
+    return top_manga[['Title', 'Score', 'Genres', 'Link', 'Thumbnail']]
 
-# --- THIS FUNCTION IS REWRITTEN FOR A HYBRID (KNN + CONTENT) APPROACH ---
 def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sparse, top_n=5):
-    """
-    Recommends manga using a hybrid KNN and content-based filtering approach:
-    1. Finds similar users based on ratings (KNN Collaborative Filtering).
-    2. Gathers manga highly rated by these similar users.
-    3. Filters this list to match genres from the user's input (Content-based).
-    4. Ranks the final list by score and returns the top N.
-    """
-    # 1. Prepare the new user's data
+    start_time = time.time()
+    print(f"--- LOG: Starting recommendation process at {start_time:.2f} ---")
+
     new_user_avg_rating = np.mean(list(new_user_ratings.values()))
     num_items = interaction_sparse.shape[1]
     new_user_vector = np.zeros(num_items)
-    rated_title_ids = []
-    input_manga_titles = [] 
+    rated_title_ids, input_manga_titles = [], []
 
     for title, rating in new_user_ratings.items():
         if title in title_name_map:
             title_id = title_name_map[title]
-            centered_score = rating - new_user_avg_rating
-            new_user_vector[title_id] = centered_score
+            new_user_vector[title_id] = rating - new_user_avg_rating
             rated_title_ids.append(title_id)
             input_manga_titles.append(title)
+    
+    print(f"--- LOG: Step 1 Complete - User vector created. Time elapsed: {time.time() - start_time:.2f}s ---")
 
-    # 2. Find similar users using KNN
     new_user_reduced = svd.transform(new_user_vector.reshape(1, -1))
-    distances, indices = nn_model.kneighbors(new_user_reduced, n_neighbors=20) # Use more neighbors for a better pool
-    similar_user_indices = indices.flatten()
+    distances, indices = nn_model.kneighbors(new_user_reduced, n_neighbors=20)
+    
+    print(f"--- LOG: Step 2 Complete - Found similar users. Time elapsed: {time.time() - start_time:.2f}s ---")
 
-    # 3. Aggregate manga from similar users
-    # Get all items rated positively (score > 0 in centered matrix) by similar users
-    similar_user_ratings = interaction_sparse[similar_user_indices]
-    candidate_items = np.where(similar_user_ratings.toarray() > 0)
-    candidate_title_ids = set(candidate_items[1]) # Get unique title IDs
-
-    # Remove items the new user has already rated
+    candidate_title_ids = set()
+    similar_user_ratings = interaction_sparse[indices.flatten()]
+    for i in range(similar_user_ratings.shape[0]):
+        user_row = similar_user_ratings.getrow(i)
+        positive_mask = user_row.data > 0
+        candidate_title_ids.update(user_row.indices[positive_mask])
+    
     candidate_title_ids.difference_update(rated_title_ids)
+    
+    print(f"--- LOG: Step 3 Complete - Aggregated {len(candidate_title_ids)} candidate manga. Time elapsed: {time.time() - start_time:.2f}s ---")
 
-    # If no candidates, return empty list
-    if not candidate_title_ids:
+    if not candidate_title_ids: 
+        print("--- LOG: No candidate manga found from similar users. Returning empty list. ---")
         return []
 
-    # 4. Filter candidates by genre, prioritizing a "main genre"
-    # Get all genres from the user's input manga and count their occurrences
     all_user_genres_list = []
     input_manga_genres_df = manga_data[manga_data['Title'].isin(input_manga_titles)]['Genres'].dropna()
     for genre_list in input_manga_genres_df.str.split(','):
         all_user_genres_list.extend([g.strip().lower() for g in genre_list])
 
-    if not all_user_genres_list:
-        return [] # Cannot filter if no genres are found
+    if not all_user_genres_list: 
+        print("--- LOG: Could not extract genres from input. Returning empty list. ---")
+        return []
 
     genre_counts = Counter(all_user_genres_list)
-    # A "main genre" is one that appears more than once in the input
     required_genres = {genre for genre, count in genre_counts.items() if count > 1}
     
     candidate_df = manga_data[manga_data['Title'].isin([title_id_map.get(i) for i in candidate_title_ids])].copy()
     final_candidates = pd.DataFrame()
 
-    if required_genres:
-        # Strict filtering: manga must contain ALL required main genres
-        def has_all_required_genres(manga_genre_str):
-            if pd.isna(manga_genre_str): return False
-            manga_genres_set = {g.strip().lower() for g in manga_genre_str.split(',')}
-            return required_genres.issubset(manga_genres_set)
-        
-        genre_match_mask = candidate_df['Genres'].apply(has_all_required_genres)
-        final_candidates = candidate_df[genre_match_mask]
+    print(f"--- LOG: Step 4 Complete - Starting genre filtering with {len(candidate_df)} candidates. Required genres: {required_genres}. Time elapsed: {time.time() - start_time:.2f}s ---")
 
-    # If strict filtering yields no results, or if there were no main genres, fall back to lenient filtering
+    if required_genres:
+        mask = candidate_df['Genre_Set'].apply(required_genres.issubset)
+        final_candidates = candidate_df[mask]
+
     if final_candidates.empty:
         user_genres_set = set(all_user_genres_list)
         if user_genres_set:
-            genre_match_mask = candidate_df['Genres'].str.lower().str.contains('|'.join(user_genres_set), na=False)
-            final_candidates = candidate_df[genre_match_mask]
+            mask = candidate_df['Genre_Set'].apply(lambda x: not x.isdisjoint(user_genres_set))
+            final_candidates = candidate_df[mask]
 
-    # 5. Rank by score and return the top N
+    # --- ADDED FEATURE: Smart Fallback ---
+    # If after all genre filtering we have no results, fall back to the original candidate list.
+    if final_candidates.empty:
+        print("--- LOG: Genre filtering resulted in zero candidates. Falling back to non-filtered list. ---")
+        final_candidates = candidate_df
+
+    print(f"--- LOG: Step 5 Complete - Found {len(final_candidates)} final manga after filtering. Time elapsed: {time.time() - start_time:.2f}s ---")
+
     top_recommendations = final_candidates.sort_values(by='Score', ascending=False).head(top_n)
-
-    return top_recommendations['Title'].tolist()
+    
+    final_titles = top_recommendations['Title'].tolist()
+    print(f"--- LOG: Process finished. Returning {len(final_titles)} recommendations. Total time: {time.time() - start_time:.2f}s ---")
+    return final_titles
 
 # ---------------------------------------------------------------------------------------------------------------------#
 # -------------------------------------------- Flask Routes ----------------------------------------------------------#
@@ -187,11 +184,9 @@ def mangaRecommendation():
         if selected_genres:
             recommendations = recommend_manga_by_genre(selected_genres, top_n=5)
             for _, row in recommendations.iterrows():
-                image_link = row['Image Link'] if pd.notna(row['Image Link']) else "https://via.placeholder.com/150x225"
-                high_res_image_link = image_link.replace('/r/50x70', '') if pd.notna(image_link) else image_link
                 manga_list.append({
                     "title": row['Title'], "url": row['Link'], "score": row['Score'],
-                    "genres": row['Genres'], "thumbnail": high_res_image_link
+                    "genres": row['Genres'], "thumbnail": row['Thumbnail']
                 })
         else:
             book_ratings = {}
@@ -205,23 +200,21 @@ def mangaRecommendation():
                         return "Invalid input. Please enter a number for ratings.", 400
 
             if book_ratings:
+                print(f"--- LOG: Received book ratings: {book_ratings} ---")
                 recommended_titles = recommend_books_for_new_user(book_ratings, nn_model, svd, interaction_sparse, top_n=5)
-
+                print(f"--- LOG: Function returned: {recommended_titles} ---")
                 for title in recommended_titles:
-                    manga_row = manga_image_links_df[
-                        (manga_image_links_df['Title'].str.lower() == title.lower()) |
-                        (manga_image_links_df['English Title'].str.lower() == title.lower())
-                    ]
-                    
-                    link, thumbnail, score = "#", "https://via.placeholder.com/150x225", "N/A"
+                    manga_row = manga_data[manga_data['Title'] == title]
                     if not manga_row.empty:
                         row = manga_row.iloc[0]
-                        link = row.get('Link', "#")
-                        image_link = row.get('Image Link')
-                        thumbnail = image_link.replace('/r/50x70', '') if pd.notna(image_link) else thumbnail
-                        score = row.get('Score_y', "N/A")
-
-                    manga_list.append({"title": title, "url": link, "thumbnail": thumbnail, "score": score})
+                        manga_list.append({
+                            "title": row['Title'], "url": row['Link'],
+                            "thumbnail": row['Thumbnail'], "score": row['Score']
+                        })
+                    else:
+                        manga_list.append({
+                            "title": title, "url": "#", "thumbnail": "https://via.placeholder.com/150x225", "score": "N/A"
+                        })
 
     return render_template("manga_recommendation.html", genres=genres, recommendations=manga_list)
 
