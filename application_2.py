@@ -77,6 +77,7 @@ def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sp
     start_time = time.time()
     print(f"--- LOG: Starting recommendation process at {start_time:.2f} ---")
 
+    # --- Tier 1: Attempt Hybrid KNN + Genre Filtering ---
     new_user_avg_rating = np.mean(list(new_user_ratings.values()))
     num_items = interaction_sparse.shape[1]
     new_user_vector = np.zeros(num_items)
@@ -89,13 +90,9 @@ def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sp
             rated_title_ids.append(title_id)
             input_manga_titles.append(title)
     
-    print(f"--- LOG: Step 1 Complete - User vector created. Time elapsed: {time.time() - start_time:.2f}s ---")
-
     new_user_reduced = svd.transform(new_user_vector.reshape(1, -1))
     distances, indices = nn_model.kneighbors(new_user_reduced, n_neighbors=20)
     
-    print(f"--- LOG: Step 2 Complete - Found similar users. Time elapsed: {time.time() - start_time:.2f}s ---")
-
     candidate_title_ids = set()
     similar_user_ratings = interaction_sparse[indices.flatten()]
     for i in range(similar_user_ratings.shape[0]):
@@ -105,52 +102,58 @@ def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sp
     
     candidate_title_ids.difference_update(rated_title_ids)
     
-    print(f"--- LOG: Step 3 Complete - Aggregated {len(candidate_title_ids)} candidate manga. Time elapsed: {time.time() - start_time:.2f}s ---")
+    if candidate_title_ids:
+        all_user_genres_list = []
+        input_manga_genres_df = manga_data[manga_data['Title'].isin(input_manga_titles)]['Genres'].dropna()
+        for genre_list in input_manga_genres_df.str.split(','):
+            all_user_genres_list.extend([g.strip().lower() for g in genre_list])
 
-    if not candidate_title_ids: 
-        print("--- LOG: No candidate manga found from similar users. Returning empty list. ---")
-        return []
+        if all_user_genres_list:
+            genre_counts = Counter(all_user_genres_list)
+            required_genres = {genre for genre, count in genre_counts.items() if count > 1}
+            
+            candidate_df = manga_data[manga_data['Title'].isin([title_id_map.get(i) for i in candidate_title_ids])].copy()
+            final_candidates = pd.DataFrame()
 
-    all_user_genres_list = []
-    input_manga_genres_df = manga_data[manga_data['Title'].isin(input_manga_titles)]['Genres'].dropna()
-    for genre_list in input_manga_genres_df.str.split(','):
-        all_user_genres_list.extend([g.strip().lower() for g in genre_list])
+            if required_genres:
+                mask = candidate_df['Genre_Set'].apply(required_genres.issubset)
+                final_candidates = candidate_df[mask]
 
-    if not all_user_genres_list: 
-        print("--- LOG: Could not extract genres from input. Returning empty list. ---")
-        return []
+            if final_candidates.empty:
+                user_genres_set = set(all_user_genres_list)
+                if user_genres_set:
+                    mask = candidate_df['Genre_Set'].apply(lambda x: not x.isdisjoint(user_genres_set))
+                    final_candidates = candidate_df[mask]
 
-    genre_counts = Counter(all_user_genres_list)
-    required_genres = {genre for genre, count in genre_counts.items() if count > 1}
-    
-    candidate_df = manga_data[manga_data['Title'].isin([title_id_map.get(i) for i in candidate_title_ids])].copy()
-    final_candidates = pd.DataFrame()
+            # If genre filtering produced results, return them
+            if not final_candidates.empty:
+                print("--- LOG: Success with Primary Hybrid Method. ---")
+                top_recommendations = final_candidates.sort_values(by='Score', ascending=False).head(top_n)
+                return top_recommendations['Title'].tolist()
 
-    print(f"--- LOG: Step 4 Complete - Starting genre filtering with {len(candidate_df)} candidates. Required genres: {required_genres}. Time elapsed: {time.time() - start_time:.2f}s ---")
+    # --- Tier 2: Fallback to KNN without Genre Filter ---
+    print("--- LOG: Primary method failed. Falling back to KNN without genre filter. ---")
+    if candidate_title_ids:
+        candidate_df = manga_data[manga_data['Title'].isin([title_id_map.get(i) for i in candidate_title_ids])].copy()
+        top_recommendations = candidate_df.sort_values(by='Score', ascending=False).head(top_n)
+        return top_recommendations['Title'].tolist()
 
-    if required_genres:
-        mask = candidate_df['Genre_Set'].apply(required_genres.issubset)
-        final_candidates = candidate_df[mask]
+    # --- Tier 3: Fallback to Content-Based (Most Common Genre) ---
+    print("--- LOG: KNN failed. Falling back to most common genre. ---")
+    if 'all_user_genres_list' in locals() and all_user_genres_list:
+        most_common_genre = Counter(all_user_genres_list).most_common(1)[0][0]
+        print(f"--- LOG: Most common genre is '{most_common_genre}'. ---")
+        genre_recommendations = manga_data[
+            manga_data['Genre_Set'].apply(lambda x: most_common_genre in x) &
+            (~manga_data['Title'].isin(input_manga_titles))
+        ].sort_values(by='Score', ascending=False).head(top_n)
+        return genre_recommendations['Title'].tolist()
 
-    if final_candidates.empty:
-        user_genres_set = set(all_user_genres_list)
-        if user_genres_set:
-            mask = candidate_df['Genre_Set'].apply(lambda x: not x.isdisjoint(user_genres_set))
-            final_candidates = candidate_df[mask]
+    # --- Tier 4: Ultimate Fallback to Global Top Rated ---
+    print("--- LOG: All methods failed. Falling back to global top rated. ---")
+    top_rated = manga_data[~manga_data['Title'].isin(input_manga_titles)].sort_values(by='Score', ascending=False).head(top_n)
+    return top_rated['Title'].tolist()
 
-    # --- ADDED FEATURE: Smart Fallback ---
-    # If after all genre filtering we have no results, fall back to the original candidate list.
-    if final_candidates.empty:
-        print("--- LOG: Genre filtering resulted in zero candidates. Falling back to non-filtered list. ---")
-        final_candidates = candidate_df
-
-    print(f"--- LOG: Step 5 Complete - Found {len(final_candidates)} final manga after filtering. Time elapsed: {time.time() - start_time:.2f}s ---")
-
-    top_recommendations = final_candidates.sort_values(by='Score', ascending=False).head(top_n)
-    
-    final_titles = top_recommendations['Title'].tolist()
-    print(f"--- LOG: Process finished. Returning {len(final_titles)} recommendations. Total time: {time.time() - start_time:.2f}s ---")
-    return final_titles
 
 # ---------------------------------------------------------------------------------------------------------------------#
 # -------------------------------------------- Flask Routes ----------------------------------------------------------#
