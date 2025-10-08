@@ -124,6 +124,32 @@ def mangaRecommendation():
 def health_check():
     return jsonify({"status": "ok", "message": "Server is up and running!"}), 200
 
+@application.route('/api/top-manga', methods=['GET'])
+def api_top_manga():
+    try:
+        top_manga_df = manga_data.sort_values(by='Score', ascending=False).head(20)
+        results = top_manga_df[['Title', 'Thumbnail']].to_dict(orient='records')
+        return jsonify(results)
+    except Exception as e:
+        print(f"!!! SERVER ERROR in /api/top-manga: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred while fetching top manga."}), 500
+
+@application.route('/api/search', methods=['GET'])
+def api_search_manga():
+    try:
+        query = request.args.get('q', '').lower().strip()
+        if not query or len(query) < 3:
+            return jsonify([])
+
+        matches = manga_data[manga_data['Title'].str.lower().str.contains(query, na=False)]
+        matches = matches.head(15)
+        results = matches[['Title', 'Thumbnail']].to_dict(orient='records')
+        return jsonify(results)
+    except Exception as e:
+        print(f"!!! SERVER ERROR in /api/search: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred during search."}), 500
 
 @application.route('/api/recommend/user', methods=['POST'])
 def api_recommend_user():
@@ -138,14 +164,10 @@ def api_recommend_user():
 
         results_df = manga_data[manga_data['Title'].isin(recommended_titles)]
         
-        # Convert NaN to None, which becomes 'null' in JSON (the correct way)
         results_df = results_df.where(pd.notnull(results_df), None)
         
-        # --- FIX: Select the correct DataFrame columns and rename them for the JSON output ---
-        # Select columns with their original, capitalized names
         results_df_selected = results_df[['Title', 'Link', 'Thumbnail', 'Score', 'Genres']]
 
-        # Rename columns to lowercase to match the expected JSON keys
         results_df_renamed = results_df_selected.rename(columns={
             'Title': 'title',
             'Link': 'url',
@@ -154,9 +176,7 @@ def api_recommend_user():
             'Genres': 'genres'
         })
 
-        # Convert to a list of dictionaries
         results = results_df_renamed.to_dict(orient='records')
-
         return jsonify(results)
     except Exception as e:
         print(f"!!! SERVER ERROR in /api/recommend/user: {e}")
@@ -173,8 +193,6 @@ def api_recommend_genre():
         selected_genres = data['genres']
         recommendations_df = recommend_manga_by_genre(selected_genres, top_n=10)
         
-        # --- FIX: Handle potential NaN values before sending the response ---
-        # Convert NaN to None, which becomes 'null' in JSON
         recommendations_df = recommendations_df.where(pd.notnull(recommendations_df), None)
 
         results = recommendations_df.to_dict(orient='records')
