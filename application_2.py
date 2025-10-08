@@ -74,7 +74,6 @@ def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sp
     print(f"--- LOG: Found recommendations (V1 logic): {recommended_titles} ---")
     return recommended_titles
 
-# (Your website routes remain unchanged)
 # ---------------------------------------------------------------------------------------------------------------------#
 # --------------------------------------- WEBSITE ROUTES --------------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
@@ -121,17 +120,9 @@ def mangaRecommendation():
 # -------------------------------------- API ROUTES -------------------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 
-# --- NEW --- Health Check Endpoint
 @application.route('/api/health', methods=['GET'])
 def health_check():
-    """
-    A simple endpoint to verify that the server is running and accessible.
-    This route does NOT require an API key.
-    """
-    return jsonify({
-        "status": "ok",
-        "message": "Server is up and running!"
-    }), 200
+    return jsonify({"status": "ok", "message": "Server is up and running!"}), 200
 
 
 @application.route('/api/recommend/user', methods=['POST'])
@@ -139,13 +130,21 @@ def api_recommend_user():
     try:
         book_ratings = request.get_json()
         if not book_ratings: return jsonify({"error": "Invalid input. Please provide ratings in JSON format."}), 400
+        
         recommended_titles = recommend_books_for_new_user(book_ratings, nn_model, svd, interaction_sparse, top_n=10)
-        results = []
-        for title in recommended_titles:
-            manga_row = manga_data[manga_data['Title'] == title]
-            if not manga_row.empty:
-                row = manga_row.iloc[0]
-                results.append({"title": row['Title'], "url": row['Link'], "thumbnail": row['Thumbnail'], "score": row['Score'], "genres": row['Genres']})
+        
+        # --- FIX: Filter the main DataFrame and handle NaN values before creating the response ---
+        if not recommended_titles:
+            return jsonify([])
+
+        results_df = manga_data[manga_data['Title'].isin(recommended_titles)]
+        
+        # Convert NaN to None, which becomes 'null' in JSON (the correct way)
+        results_df = results_df.where(pd.notnull(results_df), None)
+        
+        # Select relevant columns and convert to a list of dictionaries
+        results = results_df[['title', 'url', 'thumbnail', 'score', 'genres']].to_dict(orient='records')
+
         return jsonify(results)
     except Exception as e:
         print(f"!!! SERVER ERROR in /api/recommend/user: {e}")
@@ -158,8 +157,14 @@ def api_recommend_genre():
     try:
         data = request.get_json()
         if not data or 'genres' not in data: return jsonify({"error": "Invalid input. Please provide a 'genres' list."}), 400
+        
         selected_genres = data['genres']
         recommendations_df = recommend_manga_by_genre(selected_genres, top_n=10)
+        
+        # --- FIX: Handle potential NaN values before sending the response ---
+        # Convert NaN to None, which becomes 'null' in JSON
+        recommendations_df = recommendations_df.where(pd.notnull(recommendations_df), None)
+
         results = recommendations_df.to_dict(orient='records')
         return jsonify(results)
     except Exception as e:
