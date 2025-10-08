@@ -1,4 +1,5 @@
 from flask import Flask, request, render_template, jsonify
+from flask_cors import CORS # Import CORS
 import pandas as pd
 import numpy as np
 import pickle
@@ -9,6 +10,8 @@ from scipy.sparse import csr_matrix
 # ---------------------------------------------- Flask Setup ----------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 application = Flask(__name__)
+# VITAL: Enable CORS for all routes, allowing your React Native app to connect
+CORS(application) 
 
 # ---------------------------------------------------------------------------------------------------------------------#
 # -------------------------------------------- Load Data and Models ---------------------------------------------------#
@@ -73,10 +76,9 @@ def hybrid_recommend_for_new_user(user_ratings, n_recommendations=5):
     Generates recommendations using SVD if possible, otherwise falls back to a top-rated list.
     """
     valid_ratings_for_svd = []
-    input_titles = [item[0] for item in user_ratings]
+    input_titles = list(user_ratings.keys())
 
     for title, score in user_ratings.items():
-        # Check for title existence, ignoring case
         found_title = next((key for key in title_name_to_id if key.lower() == title.lower()), None)
         if found_title:
             valid_ratings_for_svd.append((found_title, score))
@@ -120,6 +122,15 @@ def hybrid_recommend_for_new_user(user_ratings, n_recommendations=5):
 def home(): 
     return render_template("home.html")
 
+@application.route('/resume')
+def resume(): return render_template("resume.html")
+
+@application.route('/projects')
+def projects(): return render_template("projects.html")
+
+@application.route('/project_specific')
+def project_specific(): return render_template("project_specific.html")
+
 @application.route('/manga_recommendation', methods=['GET', 'POST'])
 def manga_recommendation_page():
     if manga_data is None:
@@ -130,13 +141,11 @@ def manga_recommendation_page():
     
     if request.method == 'POST':
         try:
-            # Genre-based recommendation
             selected_genres = [g for g in [request.form.get(f'genre_{i}') for i in range(1, 4)] if g]
             if selected_genres:
                 recommendations = recommend_manga_by_genre(selected_genres, top_n=5)
                 manga_list = recommendations.to_dict(orient='records')
             else:
-                # User-rating-based recommendation
                 book_ratings = {
                     request.form.get(f'manga_{i}').strip(): int(request.form.get(f'rating_{i}'))
                     for i in range(1, 6) if request.form.get(f'manga_{i}') and request.form.get(f'rating_{i}')
@@ -145,6 +154,8 @@ def manga_recommendation_page():
                 if book_ratings:
                     recommended_titles = hybrid_recommend_for_new_user(book_ratings, n_recommendations=5)
                     recs_df = manga_data[manga_data['Title'].isin(recommended_titles)]
+                    # Reorder results to match recommendation order
+                    recs_df = recs_df.set_index('Title').loc[recommended_titles].reset_index()
                     manga_list = recs_df.to_dict(orient='records')
         except Exception as e:
             print(f"Error during recommendation: {e}")
@@ -152,12 +163,62 @@ def manga_recommendation_page():
 
     return render_template("manga_recommendation.html", genres=all_genres, recommendations=manga_list)
 
-# --- All API routes from your previous file would go here, updated to use the new function ---
+# ---------------------------------------------------------------------------------------------------------------------#
+# -------------------------------------- API ROUTES (Now with Safety Nets) --------------------------------------------#
+# ---------------------------------------------------------------------------------------------------------------------#
+
+@application.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "ok", "message": "Server is up and running!"}), 200
+
+@application.route('/api/genres', methods=['GET'])
+def get_all_genres():
+    try:
+        if manga_data is None:
+            return jsonify({"error": "Manga data not loaded on server."}), 500
+        all_genres = sorted(list(manga_data['Genre_Set'].explode().dropna().unique()))
+        return jsonify(all_genres)
+    except Exception as e:
+        print(f"!!! SERVER ERROR in /api/genres: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred while fetching genres."}), 500
+
+@application.route('/api/search', methods=['GET'])
+def search_manga():
+    try:
+        if manga_data is None:
+            return jsonify({"error": "Manga data not loaded on server."}), 500
+        query = request.args.get('q', '').lower()
+        if len(query) < 3:
+            return jsonify([])
+        
+        results = manga_data[manga_data['Title'].str.lower().str.contains(query, na=False)].head(20)
+        results_list = results[['Title', 'Thumbnail']].to_dict(orient='records')
+        return jsonify(results_list)
+    except Exception as e:
+        print(f"!!! SERVER ERROR in /api/search: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred."}), 500
+
+@application.route('/api/top-manga', methods=['GET'])
+def top_manga():
+    try:
+        if manga_data is None:
+            return jsonify({"error": "Manga data not loaded on server."}), 500
+        # Ensure 'Score' column is numeric before sorting
+        manga_data['Score'] = pd.to_numeric(manga_data['Score'], errors='coerce')
+        top_20 = manga_data.sort_values('Score', ascending=False).head(20)
+        results_list = top_20[['Title', 'Thumbnail']].to_dict(orient='records')
+        return jsonify(results_list)
+    except Exception as e:
+        print(f"!!! SERVER ERROR in /api/top-manga: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred."}), 500
+
 @application.route('/api/recommend/user', methods=['POST'])
 def api_recommend_user():
-    """API endpoint for user-based recommendations."""
     if not svd_model:
-        return jsonify({"error": "Models are not loaded"}), 500
+        return jsonify({"error": "Recommendation model is not loaded"}), 500
     try:
         book_ratings = request.get_json()
         if not book_ratings:
@@ -165,10 +226,9 @@ def api_recommend_user():
         
         recommended_titles = hybrid_recommend_for_new_user(book_ratings, n_recommendations=10)
         
-        # Fetch details for recommended titles
         results_df = manga_data[manga_data['Title'].isin(recommended_titles)]
         results = []
-        for title in recommended_titles: # Keep the recommended order
+        for title in recommended_titles:
             manga_row = results_df[results_df['Title'] == title]
             if not manga_row.empty:
                 row = manga_row.iloc[0]
@@ -185,8 +245,30 @@ def api_recommend_user():
         traceback.print_exc()
         return jsonify({"error": "An internal server error occurred."}), 500
 
-# (Other API routes like /health, /search, /recommend/genre can be copied from your file)
+@application.route('/api/recommend/genre', methods=['POST'])
+def api_recommend_genre():
+    try:
+        if manga_data is None:
+            return jsonify({"error": "Manga data not loaded on server."}), 500
+        data = request.get_json()
+        if not data or 'genres' not in data:
+            return jsonify({"error": "Invalid input. Please provide a 'genres' list."}), 400
+        
+        selected_genres = data['genres']
+        recommendations_df = recommend_manga_by_genre(selected_genres, top_n=10)
+        
+        # Clean NaN values for safe JSON conversion
+        recommendations_df['Score'] = recommendations_df['Score'].where(pd.notna(recommendations_df['Score']), None)
+        recommendations_df['Genres'] = recommendations_df['Genres'].where(pd.notna(recommendations_df['Genres']), None)
+
+        results = recommendations_df.to_dict(orient='records')
+        return jsonify(results)
+    except Exception as e:
+        print(f"!!! SERVER ERROR in /api/recommend/genre: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred."}), 500
 
 # Run the app
 if __name__ == '__main__':
     application.run(host="localhost", port=5000, debug=True)
+
