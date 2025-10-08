@@ -74,6 +74,7 @@ def recommend_books_for_new_user(new_user_ratings, nn_model, svd, interaction_sp
     print(f"--- LOG: Found recommendations (V1 logic): {recommended_titles} ---")
     return recommended_titles
 
+# (Your website routes remain unchanged)
 # ---------------------------------------------------------------------------------------------------------------------#
 # --------------------------------------- WEBSITE ROUTES --------------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
@@ -124,32 +125,39 @@ def mangaRecommendation():
 def health_check():
     return jsonify({"status": "ok", "message": "Server is up and running!"}), 200
 
-@application.route('/api/top-manga', methods=['GET'])
-def api_top_manga():
+# --- NEW: Endpoint to get all unique genres ---
+@application.route('/api/genres', methods=['GET'])
+def get_all_genres():
     try:
-        top_manga_df = manga_data.sort_values(by='Score', ascending=False).head(20)
-        results = top_manga_df[['Title', 'Thumbnail']].to_dict(orient='records')
-        return jsonify(results)
+        all_genres = set()
+        # Ensure 'Genres' column has no NaN values before processing
+        genres_series = manga_data['Genres'].dropna()
+        for genre_list in genres_series.str.split(','):
+            all_genres.update([g.strip() for g in genre_list])
+        return jsonify(sorted(list(all_genres)))
     except Exception as e:
-        print(f"!!! SERVER ERROR in /api/top-manga: {e}")
+        print(f"!!! SERVER ERROR in /api/genres: {e}")
         traceback.print_exc()
-        return jsonify({"error": "An internal server error occurred while fetching top manga."}), 500
+        return jsonify({"error": "An internal server error occurred while fetching genres."}), 500
 
 @application.route('/api/search', methods=['GET'])
-def api_search_manga():
-    try:
-        query = request.args.get('q', '').lower().strip()
-        if not query or len(query) < 3:
-            return jsonify([])
+def search_manga():
+    query = request.args.get('q', '').lower()
+    if len(query) < 3:
+        return jsonify([])
+    
+    # Filter and limit results
+    results = manga_data[manga_data['Title'].str.lower().str.contains(query, na=False)].head(20)
+    
+    # Clean data for JSON response
+    results_list = results[['Title', 'Thumbnail']].to_dict(orient='records')
+    return jsonify(results_list)
 
-        matches = manga_data[manga_data['Title'].str.lower().str.contains(query, na=False)]
-        matches = matches.head(15)
-        results = matches[['Title', 'Thumbnail']].to_dict(orient='records')
-        return jsonify(results)
-    except Exception as e:
-        print(f"!!! SERVER ERROR in /api/search: {e}")
-        traceback.print_exc()
-        return jsonify({"error": "An internal server error occurred during search."}), 500
+@application.route('/api/top-manga', methods=['GET'])
+def top_manga():
+    top_20 = manga_data.sort_values('Score', ascending=False).head(20)
+    results_list = top_20[['Title', 'Thumbnail']].to_dict(orient='records')
+    return jsonify(results_list)
 
 @application.route('/api/recommend/user', methods=['POST'])
 def api_recommend_user():
@@ -159,24 +167,22 @@ def api_recommend_user():
         
         recommended_titles = recommend_books_for_new_user(book_ratings, nn_model, svd, interaction_sparse, top_n=10)
         
-        if not recommended_titles:
-            return jsonify([])
+        results = []
+        for title in recommended_titles:
+            manga_row = manga_data[manga_data['Title'] == title]
+            if not manga_row.empty:
+                row = manga_row.iloc[0].copy()
+                # Clean NaN values before sending response
+                row['genres'] = row['Genres'] if pd.notna(row['Genres']) else None
+                row['score'] = row['Score'] if pd.notna(row['Score']) else None
+                row['thumbnail'] = row['Thumbnail']
+                row['url'] = row['Link']
+                row['title'] = row['Title']
+                
+                # Select and rename columns for the final output
+                result_item = row[['title', 'url', 'thumbnail', 'score', 'genres']]
+                results.append(result_item.to_dict())
 
-        results_df = manga_data[manga_data['Title'].isin(recommended_titles)]
-        
-        results_df = results_df.where(pd.notnull(results_df), None)
-        
-        results_df_selected = results_df[['Title', 'Link', 'Thumbnail', 'Score', 'Genres']]
-
-        results_df_renamed = results_df_selected.rename(columns={
-            'Title': 'title',
-            'Link': 'url',
-            'Thumbnail': 'thumbnail',
-            'Score': 'score',
-            'Genres': 'genres'
-        })
-
-        results = results_df_renamed.to_dict(orient='records')
         return jsonify(results)
     except Exception as e:
         print(f"!!! SERVER ERROR in /api/recommend/user: {e}")
@@ -189,11 +195,12 @@ def api_recommend_genre():
     try:
         data = request.get_json()
         if not data or 'genres' not in data: return jsonify({"error": "Invalid input. Please provide a 'genres' list."}), 400
-        
         selected_genres = data['genres']
         recommendations_df = recommend_manga_by_genre(selected_genres, top_n=10)
         
-        recommendations_df = recommendations_df.where(pd.notnull(recommendations_df), None)
+        # Clean NaN values
+        recommendations_df['Genres'] = recommendations_df['Genres'].where(pd.notna(recommendations_df['Genres']), None)
+        recommendations_df['Score'] = recommendations_df['Score'].where(pd.notna(recommendations_df['Score']), None)
 
         results = recommendations_df.to_dict(orient='records')
         return jsonify(results)
