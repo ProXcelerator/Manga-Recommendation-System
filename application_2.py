@@ -5,6 +5,7 @@ import numpy as np
 import pickle
 import traceback
 from scipy.sparse import csr_matrix
+from collections import Counter
 
 # ---------------------------------------------------------------------------------------------------------------------#
 # ---------------------------------------------- Flask Setup ----------------------------------------------------------#
@@ -26,8 +27,6 @@ try:
         title_map = pickle.load(f)
     with open('title_name_to_id.pkl', 'rb') as f:
         title_name_to_id = pickle.load(f)
-    with open('manga_metadata.pkl', 'rb') as f:
-        manga_metadata = pickle.load(f)
     
     # --- Load General Manga Info for Display ---
     manga_data_raw = pd.read_csv('manga_list_3.csv')
@@ -39,7 +38,7 @@ try:
     image_df_subset = manga_image_links_df[['Title', 'Image Link', 'Score_y']].copy()
     image_df_subset.rename(columns={'Image Link': 'Thumbnail', 'Score_y': 'Display Score'}, inplace=True)
     manga_data = pd.merge(manga_data_raw, image_df_subset, on='Title', how='left')
-    manga_data['Thumbnail'] = manga_data['Thumbnail'].str.replace('/r/50x70', '', regex=False).fillna("https://via.placeholder.com/150x225")
+    manga_data['Thumbnail'] = manga_data['Thumbnail'].str.replace('/r/50x70', '', regex=False).fillna("https://placehold.co/150x225/2d3748/ffffff?text=No+Image")
     manga_data['Score'] = manga_data['Display Score'].fillna(manga_data['Score'])
     manga_data.drop_duplicates(subset=['Title'], keep='first', inplace=True)
     manga_data['Genre_Set'] = manga_data['Genres'].str.lower().str.split(',').apply(
@@ -56,36 +55,47 @@ except FileNotFoundError as e:
 # ----------------------------------- Helper Functions ----------------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 
-def recommend_manga_by_genre(genres, top_n=5):
-    """Recommends manga by finding the best genre matches."""
+def recommend_manga_by_genre(genres, top_n=10, excluded_titles=[]):
+    """Recommends manga by finding the best genre matches, excluding certain titles."""
     if not genres or not isinstance(genres, list) or manga_data is None:
         return pd.DataFrame()
     
     target_genres = set(g.lower() for g in genres)
-    manga_data['match_count'] = manga_data['Genre_Set'].apply(
+    
+    # Create a copy to avoid SettingWithCopyWarning
+    temp_manga_data = manga_data.copy()
+    
+    temp_manga_data['match_count'] = temp_manga_data['Genre_Set'].apply(
         lambda manga_genres: len(target_genres.intersection(manga_genres))
     )
-    top_manga = manga_data[manga_data['match_count'] > 0].copy()
+    
+    # Filter out manga that the user has already rated
+    if excluded_titles:
+        temp_manga_data = temp_manga_data[~temp_manga_data['Title'].str.lower().isin([t.lower() for t in excluded_titles])]
+
+    top_manga = temp_manga_data[temp_manga_data['match_count'] > 0]
     top_manga = top_manga.sort_values(by=['match_count', 'Score'], ascending=[False, False]).head(top_n)
 
     return top_manga[['Title', 'Score', 'Genres', 'Link', 'Thumbnail']]
 
 
-def hybrid_recommend_for_new_user(user_ratings, n_recommendations=5):
+def get_hybrid_recommendations(user_ratings, n_recommendations=5):
     """
-    Generates recommendations using SVD if possible, otherwise falls back to a top-rated list.
+    Generates recommendations using SVD if possible. If a title is not found in the SVD model's
+    dataset, it falls back to a genre-based recommendation system.
     """
     valid_ratings_for_svd = []
     input_titles = list(user_ratings.keys())
 
     for title, score in user_ratings.items():
+        # Find case-insensitive match for the title
         found_title = next((key for key in title_name_to_id if key.lower() == title.lower()), None)
         if found_title:
             valid_ratings_for_svd.append((found_title, score))
         else:
-            print(f"Info: '{title}' not in the collaborative filtering dataset.")
+            print(f"Info: '{title}' not in the collaborative filtering dataset. Will use for genre fallback.")
 
-    # --- SVD Mode ---
+    # --- SVD Mode (Primary) ---
     if valid_ratings_for_svd:
         print("\n--- LOG: Using SVD collaborative filtering. ---")
         num_items = len(title_map)
@@ -100,175 +110,100 @@ def hybrid_recommend_for_new_user(user_ratings, n_recommendations=5):
         new_user_sparse_row = csr_matrix(new_user_vector.reshape(1, -1))
         new_user_latent_vector = svd_model.transform(new_user_sparse_row)
         predicted_scores = np.dot(new_user_latent_vector, svd_model.components_).flatten()
+        
+        # Ensure previously rated items are not recommended
         predicted_scores[rated_indices] = -np.inf
 
         top_indices = np.argsort(predicted_scores)[-n_recommendations:][::-1]
         return [title_map.get(i) for i in top_indices if title_map.get(i) is not None]
 
-    # --- Fallback Mode ---
+    # --- Genre-Based Fallback Mode ---
     else:
-        print("\n--- LOG: No valid titles found. Switching to fallback mode. ---")
-        if manga_metadata is None:
-            return ["Could not provide fallback recommendations because metadata is missing."]
+        print("\n--- LOG: No valid SVD titles found. Switching to genre-based fallback. ---")
         
-        top_rated = manga_metadata.sort_values(by='Score_y', ascending=False)
-        recommendations = top_rated[~top_rated['Title'].str.lower().isin([t.lower() for t in input_titles])]
-        return recommendations.head(n_recommendations)['Title'].tolist()
+        # 1. Find the genres for the user's input titles from the main manga_data
+        user_manga_genres_df = manga_data[manga_data['Title'].str.lower().isin([t.lower() for t in input_titles])]
+        
+        if user_manga_genres_df.empty:
+             # Ultimate fallback: if we don't even know the genre, return top rated overall
+            print("--- LOG: Could not find genres for input. Returning top-rated manga. ---")
+            top_rated = manga_data.sort_values(by='Score', ascending=False)
+            return top_rated.head(n_recommendations)['Title'].tolist()
+
+        # 2. Extract, flatten, and count all genres from the user's rated manga
+        genres_list = user_manga_genres_df['Genres'].dropna().str.split(',').tolist()
+        all_genres = [genre.strip().lower() for sublist in genres_list for genre in sublist]
+        
+        # 3. Find the two most common genres
+        top_two_genres = [genre for genre, count in Counter(all_genres).most_common(2)]
+        print(f"--- LOG: Using top genres for fallback: {top_two_genres} ---")
+
+        # 4. Get recommendations based on these genres, excluding the titles the user already entered
+        recommendations_df = recommend_manga_by_genre(top_two_genres, top_n=n_recommendations, excluded_titles=input_titles)
+        return recommendations_df['Title'].tolist()
 
 # ---------------------------------------------------------------------------------------------------------------------#
 # --------------------------------------- WEBSITE & API ROUTES --------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 @application.route('/')
 def home(): 
-    return render_template("home.html")
-
-@application.route('/resume')
-def resume(): return render_template("resume.html")
-
-@application.route('/projects')
-def projects(): return render_template("projects.html")
-
-@application.route('/project_specific')
-def project_specific(): return render_template("project_specific.html")
+    return render_template("home.html") # Assuming you have other pages
 
 @application.route('/manga_recommendation', methods=['GET', 'POST'])
 def manga_recommendation_page():
     if manga_data is None:
         return "Error: Manga data is not loaded.", 500
         
-    all_genres = sorted(list(manga_data['Genre_Set'].explode().dropna().unique()))
     manga_list = []
     
     if request.method == 'POST':
         try:
-            selected_genres = [g for g in [request.form.get(f'genre_{i}') for i in range(1, 4)] if g]
-            if selected_genres:
-                recommendations = recommend_manga_by_genre(selected_genres, top_n=5)
-                manga_list = recommendations.to_dict(orient='records')
-            else:
-                book_ratings = {
-                    request.form.get(f'manga_{i}').strip(): int(request.form.get(f'rating_{i}'))
-                    for i in range(1, 6) if request.form.get(f'manga_{i}') and request.form.get(f'rating_{i}')
-                }
+            # Collect all manga titles and ratings from the form
+            book_ratings = {
+                request.form.get(f'manga_{i}').strip(): int(request.form.get(f'rating_{i}'))
+                for i in range(1, 4) if request.form.get(f'manga_{i}') and request.form.get(f'rating_{i}')
+            }
+            
+            if book_ratings:
+                recommended_titles = get_hybrid_recommendations(book_ratings, n_recommendations=5)
+                recs_df = manga_data[manga_data['Title'].isin(recommended_titles)]
                 
-                if book_ratings:
-                    recommended_titles = hybrid_recommend_for_new_user(book_ratings, n_recommendations=5)
-                    recs_df = manga_data[manga_data['Title'].isin(recommended_titles)]
-                    # Reorder results to match recommendation order
+                # Reorder results to match the recommendation order, which can be important
+                if recommended_titles:
                     recs_df = recs_df.set_index('Title').loc[recommended_titles].reset_index()
-                    manga_list = recs_df.to_dict(orient='records')
+
+                manga_list = recs_df.to_dict(orient='records')
         except Exception as e:
             print(f"Error during recommendation: {e}")
             traceback.print_exc()
 
-    return render_template("manga_recommendation.html", genres=all_genres, recommendations=manga_list)
+    return render_template("manga_recommendation.html", recommendations=manga_list)
 
 # ---------------------------------------------------------------------------------------------------------------------#
-# -------------------------------------- API ROUTES (Now with Safety Nets) --------------------------------------------#
+# -------------------------------------- API ROUTES (For React Native, etc.) ------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
-
-@application.route('/api/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "ok", "message": "Server is up and running!"}), 200
-
-@application.route('/api/genres', methods=['GET'])
-def get_all_genres():
-    try:
-        if manga_data is None:
-            return jsonify({"error": "Manga data not loaded on server."}), 500
-        all_genres = sorted(list(manga_data['Genre_Set'].explode().dropna().unique()))
-        return jsonify(all_genres)
-    except Exception as e:
-        print(f"!!! SERVER ERROR in /api/genres: {e}")
-        traceback.print_exc()
-        return jsonify({"error": "An internal server error occurred while fetching genres."}), 500
 
 @application.route('/api/search', methods=['GET'])
 def search_manga():
+    """Provides autocomplete search results for manga titles."""
     try:
         if manga_data is None:
             return jsonify({"error": "Manga data not loaded on server."}), 500
         query = request.args.get('q', '').lower()
         if len(query) < 3:
-            return jsonify([])
+            return jsonify([]) # Don't search for very short strings
         
-        results = manga_data[manga_data['Title'].str.lower().str.contains(query, na=False)].head(20)
-        results_list = results[['Title', 'Thumbnail']].to_dict(orient='records')
+        # Search for titles containing the query
+        results = manga_data[manga_data['Title'].str.lower().str.contains(query, na=False)].head(10)
+        results_list = results['Title'].tolist()
         return jsonify(results_list)
     except Exception as e:
         print(f"!!! SERVER ERROR in /api/search: {e}")
         traceback.print_exc()
         return jsonify({"error": "An internal server error occurred."}), 500
 
-@application.route('/api/top-manga', methods=['GET'])
-def top_manga():
-    try:
-        if manga_data is None:
-            return jsonify({"error": "Manga data not loaded on server."}), 500
-        # Ensure 'Score' column is numeric before sorting
-        manga_data['Score'] = pd.to_numeric(manga_data['Score'], errors='coerce')
-        top_20 = manga_data.sort_values('Score', ascending=False).head(20)
-        results_list = top_20[['Title', 'Thumbnail']].to_dict(orient='records')
-        return jsonify(results_list)
-    except Exception as e:
-        print(f"!!! SERVER ERROR in /api/top-manga: {e}")
-        traceback.print_exc()
-        return jsonify({"error": "An internal server error occurred."}), 500
-
-@application.route('/api/recommend/user', methods=['POST'])
-def api_recommend_user():
-    if not svd_model:
-        return jsonify({"error": "Recommendation model is not loaded"}), 500
-    try:
-        book_ratings = request.get_json()
-        if not book_ratings:
-            return jsonify({"error": "Invalid input. Please provide ratings in JSON format."}), 400
-        
-        recommended_titles = hybrid_recommend_for_new_user(book_ratings, n_recommendations=10)
-        
-        results_df = manga_data[manga_data['Title'].isin(recommended_titles)]
-        results = []
-        for title in recommended_titles:
-            manga_row = results_df[results_df['Title'] == title]
-            if not manga_row.empty:
-                row = manga_row.iloc[0]
-                results.append({
-                    "title": row['Title'],
-                    "url": row['Link'],
-                    "thumbnail": row['Thumbnail'],
-                    "score": row['Score'] if pd.notna(row['Score']) else None,
-                    "genres": row['Genres'] if pd.notna(row['Genres']) else None
-                })
-        return jsonify(results)
-    except Exception as e:
-        print(f"!!! SERVER ERROR in /api/recommend/user: {e}")
-        traceback.print_exc()
-        return jsonify({"error": "An internal server error occurred."}), 500
-
-@application.route('/api/recommend/genre', methods=['POST'])
-def api_recommend_genre():
-    try:
-        if manga_data is None:
-            return jsonify({"error": "Manga data not loaded on server."}), 500
-        data = request.get_json()
-        if not data or 'genres' not in data:
-            return jsonify({"error": "Invalid input. Please provide a 'genres' list."}), 400
-        
-        selected_genres = data['genres']
-        recommendations_df = recommend_manga_by_genre(selected_genres, top_n=10)
-        
-        # Clean NaN values for safe JSON conversion
-        recommendations_df['Score'] = recommendations_df['Score'].where(pd.notna(recommendations_df['Score']), None)
-        recommendations_df['Genres'] = recommendations_df['Genres'].where(pd.notna(recommendations_df['Genres']), None)
-
-        results = recommendations_df.to_dict(orient='records')
-        return jsonify(results)
-    except Exception as e:
-        print(f"!!! SERVER ERROR in /api/recommend/genre: {e}")
-        traceback.print_exc()
-        return jsonify({"error": "An internal server error occurred."}), 500
+# (Keep other API routes if they are used by your React Native app)
 
 # Run the app
 if __name__ == '__main__':
     application.run(host="localhost", port=5000, debug=True)
-
