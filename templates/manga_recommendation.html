@@ -227,8 +227,8 @@
         <h2>Recommended Manga for You:</h2>
         <div class="recommendation-container">
             {% for manga in recommendations %}
-            <a href="{{ manga.url }}" target="_blank" class="recommendation-box">
-                <img src="{{ manga.thumbnail }}" alt="{{ manga.title }}">
+            <a href="{{ manga.Link }}" target="_blank" class="recommendation-box">
+                <img src="{{ manga.Thumbnail }}" alt="{{ manga.Title }}">
                 <h3>{{ manga.title }}</h3>
                 <p>Score: {{ manga.score }}</p>
             </a>
