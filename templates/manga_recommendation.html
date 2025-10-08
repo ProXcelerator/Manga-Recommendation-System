@@ -144,7 +144,6 @@
 
     <div class="input-container">
         <form method="POST" action="/manga_recommendation">
-            <!-- Genre Selection -->
             <h2>Select Genres for Recommendations</h2>
             <p style="margin-top: 30px; font-size: 1.2em; color: #555;">
                 If you have not read any manga and are starting from scratch. Select from the drop down menu and 
@@ -179,7 +178,6 @@
                 </select>
             </div>
 
-            <!-- Ratings Input -->
             <h2>Rate Manga You Have Read</h2>
             <p style="margin-top: 30px; font-size: 1.2em; color: #555;">
                 You can enter between 1 and 5 manga that you have read and you can rate each one between 0-10. 
@@ -228,13 +226,56 @@
         <div class="recommendation-container">
             {% for manga in recommendations %}
             <a href="{{ manga.Link }}" target="_blank" class="recommendation-box">
-                <img src="{{ manga.Thumbnail }}" alt="{{ manga.Title }}">
-                <h3>{{ manga.title }}</h3>
-                <p>Score: {{ manga.score }}</p>
+                <img class="manga-image-api" 
+                     data-title="{{ manga.Title }}" 
+                     src="https://via.placeholder.com/150x225.png?text=Loading..." 
+                     alt="{{ manga.Title }}">
+                <h3>{{ manga.Title }}</h3>
+                <p>Score: {{ manga.Score }}</p>
             </a>
             {% endfor %}
         </div>
     </div>
     {% endif %}
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Select all image elements that need an API-sourced image
+            const imageElements = document.querySelectorAll('.manga-image-api');
+
+            // Process each image element
+            imageElements.forEach(img => {
+                const title = img.dataset.title;
+                if (!title) return; // Skip if there's no title
+
+                // Prepare the title for the API URL
+                const encodedTitle = encodeURIComponent(title);
+                const apiUrl = `https://api.jikan.moe/v4/manga?q=${encodedTitle}&limit=1`;
+
+                // Fetch data from the Jikan API
+                fetch(apiUrl)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        // Check if the API returned valid data and an image URL
+                        if (data.data && data.data.length > 0) {
+                            const imageUrl = data.data[0].images.jpg.image_url;
+                            if (imageUrl) {
+                                img.src = imageUrl; // Update the image source
+                            }
+                        } else {
+                            console.warn(`No image found on Jikan API for: ${title}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error(`Failed to fetch image for ${title}:`, error);
+                    });
+            });
+        });
+    </script>
 </body>
 </html>
