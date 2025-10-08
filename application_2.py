@@ -133,7 +133,6 @@ def api_recommend_user():
         
         recommended_titles = recommend_books_for_new_user(book_ratings, nn_model, svd, interaction_sparse, top_n=10)
         
-        # --- FIX: Filter the main DataFrame and handle NaN values before creating the response ---
         if not recommended_titles:
             return jsonify([])
 
@@ -142,8 +141,21 @@ def api_recommend_user():
         # Convert NaN to None, which becomes 'null' in JSON (the correct way)
         results_df = results_df.where(pd.notnull(results_df), None)
         
-        # Select relevant columns and convert to a list of dictionaries
-        results = results_df[['title', 'url', 'thumbnail', 'score', 'genres']].to_dict(orient='records')
+        # --- FIX: Select the correct DataFrame columns and rename them for the JSON output ---
+        # Select columns with their original, capitalized names
+        results_df_selected = results_df[['Title', 'Link', 'Thumbnail', 'Score', 'Genres']]
+
+        # Rename columns to lowercase to match the expected JSON keys
+        results_df_renamed = results_df_selected.rename(columns={
+            'Title': 'title',
+            'Link': 'url',
+            'Thumbnail': 'thumbnail',
+            'Score': 'score',
+            'Genres': 'genres'
+        })
+
+        # Convert to a list of dictionaries
+        results = results_df_renamed.to_dict(orient='records')
 
         return jsonify(results)
     except Exception as e:
@@ -175,3 +187,4 @@ def api_recommend_genre():
 # Run the app
 if __name__ == '__main__':
     application.run(host="localhost", port=5000, debug=True)
+
