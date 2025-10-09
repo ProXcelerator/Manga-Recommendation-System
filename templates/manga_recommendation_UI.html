@@ -31,27 +31,32 @@
         .autocomplete-suggestion:hover {
             background-color: #4a5568;
         }
-        .card {
+        
+        /* --- Styles for Rating Bubbles --- */
+        .rating-bubble {
             background-color: #2d3748;
-            border: 1px solid #4a5568;
+            transition: background-color 0.2s ease-in-out;
+            width: 2.5rem;
+            height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        /* Style for the collapsible genre section */
-        details > summary {
-            cursor: pointer;
-            list-style: none; /* Hide the default marker */
+        .rating-selected {
+            background-color: #ea580c;
+            color: #ffffff;
         }
-        details > summary::-webkit-details-marker {
-            display: none; /* Hide the default marker in Chrome/Safari */
-        }
-        /* Custom arrow for the collapsible section */
-        details > summary::before {
-            content: '▶';
-            margin-right: 0.5rem;
-            display: inline-block;
-            transition: transform 0.2s;
-        }
-        details[open] > summary::before {
-            transform: rotate(90deg);
+
+        /* --- Styles for Google Loading Animation --- */
+        .google-loader { display: flex; justify-content: center; gap: 10px; }
+        .google-loader div { width: 16px; height: 16px; border-radius: 50%; animation: bounce 0.6s infinite alternate; }
+        .google-loader .dot1 { background-color: #4285F4; animation-delay: 0s; }
+        .google-loader .dot2 { background-color: #DB4437; animation-delay: 0.1s; }
+        .google-loader .dot3 { background-color: #F4B400; animation-delay: 0.2s; }
+        .google-loader .dot4 { background-color: #0F9D58; animation-delay: 0.3s; }
+        @keyframes bounce { 
+            from { transform: translateY(0); } 
+            to { transform: translateY(-12px); } 
         }
     </style>
 </head>
@@ -66,86 +71,68 @@
         
         <header class="text-center mb-10">
             <h1 class="text-4xl md:text-5xl font-bold text-white mb-2">Manga Recommendation Engine</h1>
-            <p class="text-lg text-gray-400">Rate your favorites or pick a genre to discover your next read.</p>
+            <p class="text-lg text-gray-400">Rate your favorites to discover your next read.</p>
         </header>
 
         <div class="max-w-4xl mx-auto bg-gray-800 rounded-lg shadow-xl p-6 md:p-8">
             <form id="recommendation-form">
                 <h2 class="text-2xl font-semibold mb-6 border-b-2 border-gray-600 pb-3">Rate up to 3 Manga</h2>
                 <div id="manga-inputs" class="space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                         <div class="relative">
                             <label for="manga_1" class="block text-sm font-medium text-gray-300 mb-1">Manga Title 1</label>
                             <input type="text" id="manga_1" name="manga_1" class="form-input w-full rounded-md shadow-sm" placeholder="e.g., Berserk" autocomplete="off">
                             <div id="suggestions_1" class="autocomplete-suggestions mt-1" style="z-index: 50;"></div>
                         </div>
                         <div>
-                            <label for="rating_1" class="block text-sm font-medium text-gray-300 mb-1">Rating (1-10)</label>
-                            <input type="number" id="rating_1" name="rating_1" min="1" max="10" class="form-input w-full rounded-md shadow-sm" placeholder="e.g., 9">
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Rating</label>
+                            <div class="flex gap-2 rating-bubbles">
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="6">6</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="7">7</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="8">8</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="9">9</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="10">10</button>
+                            </div>
+                            <input type="hidden" id="rating_1" name="rating_1">
                         </div>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                          <div class="relative">
                             <label for="manga_2" class="block text-sm font-medium text-gray-300 mb-1">Manga Title 2</label>
                             <input type="text" id="manga_2" name="manga_2" class="form-input w-full rounded-md shadow-sm" placeholder="Optional" autocomplete="off">
                             <div id="suggestions_2" class="autocomplete-suggestions mt-1" style="z-index: 40;"></div>
                         </div>
                         <div>
-                            <label for="rating_2" class="block text-sm font-medium text-gray-300 mb-1">Rating (1-10)</label>
-                            <input type="number" id="rating_2" name="rating_2" min="1" max="10" class="form-input w-full rounded-md shadow-sm">
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Rating</label>
+                            <div class="flex gap-2 rating-bubbles">
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="6">6</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="7">7</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="8">8</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="9">9</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="10">10</button>
+                            </div>
+                            <input type="hidden" id="rating_2" name="rating_2">
                         </div>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                          <div class="relative">
                             <label for="manga_3" class="block text-sm font-medium text-gray-300 mb-1">Manga Title 3</label>
                             <input type="text" id="manga_3" name="manga_3" class="form-input w-full rounded-md shadow-sm" placeholder="Optional" autocomplete="off">
                             <div id="suggestions_3" class="autocomplete-suggestions mt-1" style="z-index: 30;"></div>
                         </div>
                         <div>
-                            <label for="rating_3" class="block text-sm font-medium text-gray-300 mb-1">Rating (1-10)</label>
-                            <input type="number" id="rating_3" name="rating_3" min="1" max="10" class="form-input w-full rounded-md shadow-sm">
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Rating</label>
+                            <div class="flex gap-2 rating-bubbles">
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="6">6</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="7">7</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="8">8</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="9">9</button>
+                                <button type="button" class="rating-bubble rounded-full font-semibold hover:bg-gray-600" data-value="10">10</button>
+                            </div>
+                            <input type="hidden" id="rating_3" name="rating_3">
                         </div>
                     </div>
                 </div>
-
-                <div class="mt-8 pt-6 border-t border-gray-700">
-                    <details>
-                        <summary class="text-xl font-semibold text-gray-300 hover:text-white">
-                           Or, Get Recommendations by Genre
-                        </summary>
-                        <div class="mt-4 space-y-4">
-                            <p class="text-sm text-gray-400">If you prefer, select up to three genres to find popular manga.</p>
-                            <div>
-                                <label for="genre_1" class="block text-sm font-medium text-gray-300 mb-1">Genre 1</label>
-                                <select id="genre_1" name="genre_1" class="form-select w-full rounded-md shadow-sm">
-                                    <option value="">-- Select a Genre --</option>
-                                    {% for genre in genres %}
-                                    <option value="{{ genre }}">{{ genre }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div>
-                                <label for="genre_2" class="block text-sm font-medium text-gray-300 mb-1">Genre 2</label>
-                                <select id="genre_2" name="genre_2" class="form-select w-full rounded-md shadow-sm">
-                                    <option value="">-- Optional --</option>
-                                    {% for genre in genres %}
-                                    <option value="{{ genre }}">{{ genre }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div>
-                                <label for="genre_3" class="block text-sm font-medium text-gray-300 mb-1">Genre 3</label>
-                                <select id="genre_3" name="genre_3" class="form-select w-full rounded-md shadow-sm">
-                                    <option value="">-- Optional --</option>
-                                    {% for genre in genres %}
-                                    <option value="{{ genre }}">{{ genre }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                    </details>
-                </div>
-
 
                 <div class="mt-8 text-center">
                     <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105">
@@ -155,50 +142,40 @@
             </form>
         </div>
         
-        <div id="recommendations-output" class="mt-12">
-            </div>
-
+        <div id="recommendations-output" class="mt-12"></div>
     </div>
 
     <script>
-        // --- Autocomplete Feature ---
+        // --- Autocomplete Feature (Unchanged) ---
         function setupAutocomplete(inputId, suggestionsId) {
             const input = document.getElementById(inputId);
             const suggestionsContainer = document.getElementById(suggestionsId);
             let debounceTimer;
-
             input.addEventListener('keyup', (e) => {
                 clearTimeout(debounceTimer);
                 const query = e.target.value;
-
                 if (query.length < 3) {
                     suggestionsContainer.innerHTML = '';
                     return;
                 }
-
                 debounceTimer = setTimeout(() => {
-                    fetch(`/api/search?q=${encodeURIComponent(query)}`)
-                        .then(response => response.json())
-                        .then(data => {
-                            suggestionsContainer.innerHTML = '';
-                            if (data.length > 0) {
-                                data.forEach(title => {
-                                    const suggestionDiv = document.createElement('div');
-                                    suggestionDiv.textContent = title;
-                                    suggestionDiv.classList.add('autocomplete-suggestion');
-                                    suggestionDiv.addEventListener('click', () => {
-                                        input.value = title;
-                                        suggestionsContainer.innerHTML = '';
-                                    });
-                                    suggestionsContainer.appendChild(suggestionDiv);
+                    fetch(`/api/search?q=${encodeURIComponent(query)}`).then(response => response.json()).then(data => {
+                        suggestionsContainer.innerHTML = '';
+                        if (data.length > 0) {
+                            data.forEach(title => {
+                                const suggestionDiv = document.createElement('div');
+                                suggestionDiv.textContent = title;
+                                suggestionDiv.classList.add('autocomplete-suggestion');
+                                suggestionDiv.addEventListener('click', () => {
+                                    input.value = title;
+                                    suggestionsContainer.innerHTML = '';
                                 });
-                            }
-                        })
-                        .catch(error => console.error('Error fetching search results:', error));
-                }, 250); // Debounce API calls by 250ms
+                                suggestionsContainer.appendChild(suggestionDiv);
+                            });
+                        }
+                    }).catch(error => console.error('Error fetching search results:', error));
+                }, 250);
             });
-
-            // Hide suggestions when clicking outside
             document.addEventListener('click', (e) => {
                 if (!input.contains(e.target)) {
                     suggestionsContainer.innerHTML = '';
@@ -209,107 +186,113 @@
         setupAutocomplete('manga_2', 'suggestions_2');
         setupAutocomplete('manga_3', 'suggestions_3');
 
+        // --- ## NEW: Rating Bubble Selection Logic ## ---
+        function setupRatingBubbles() {
+            const ratingContainers = document.querySelectorAll('.rating-bubbles');
+            ratingContainers.forEach((container, index) => {
+                const hiddenInput = document.getElementById(`rating_${index + 1}`);
+                container.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('rating-bubble')) {
+                        const selectedValue = e.target.dataset.value;
+                        
+                        // Update hidden input
+                        hiddenInput.value = selectedValue;
 
-        // --- Dynamic Recommendation Fetching ---
+                        // Update visuals
+                        container.querySelectorAll('.rating-bubble').forEach(btn => {
+                            btn.classList.remove('rating-selected');
+                        });
+                        e.target.classList.add('rating-selected');
+                    }
+                });
+            });
+        }
+        setupRatingBubbles();
+
+        // --- Form Submission Logic ---
         const form = document.getElementById('recommendation-form');
         const outputContainer = document.getElementById('recommendations-output');
-
         form.addEventListener('submit', async (e) => {
-            e.preventDefault(); // Prevent the default form submission (page reload)
-
-            // Show loading state
+            e.preventDefault();
+            // --- ## NEW LOADING ANIMATION ## ---
             outputContainer.innerHTML = `
                 <div class="text-center">
-                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-400"></div>
-                    <p class="mt-4 text-lg text-gray-400">Finding your next favorite manga...</p>
+                    <p class="text-lg text-gray-400 mb-6">Searching for recommendations...</p>
+                    <div class="google-loader">
+                        <div class="dot1"></div>
+                        <div class="dot2"></div>
+                        <div class="dot3"></div>
+                        <div class="dot4"></div>
+                    </div>
                 </div>
             `;
-            
-            // 1. Gather data from the form
             const book_ratings = {};
             for (let i = 1; i <= 3; i++) {
                 const title = document.getElementById(`manga_${i}`).value.trim();
-                const rating = document.getElementById(`rating_${i}`).value;
+                const rating = document.getElementById(`rating_${i}`).value; // Still works because of the hidden input
                 if (title && rating) {
                     book_ratings[title] = parseInt(rating, 10);
                 }
             }
-
-            const selected_genres = [];
-            for (let i = 1; i <= 3; i++) {
-                const genre = document.getElementById(`genre_${i}`).value;
-                if (genre) {
-                    selected_genres.push(genre);
-                }
-            }
-
-            const payload = {
-                ratings: book_ratings,
-                genres: selected_genres
-            };
-            
-            // 2. Send data to the API endpoint
+            const payload = { ratings: book_ratings, genres: [] }; // Genres part removed as it's not in this form
             try {
                 const response = await fetch('/api/recommend', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
-                if (!response.ok) {
-                    throw new Error(`Server responded with status: ${response.status}`);
-                }
-
+                if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
                 const recommendations = await response.json();
-                
-                // 3. Render the results
                 renderRecommendations(recommendations);
-
             } catch (error) {
                 console.error("Failed to get recommendations:", error);
-                outputContainer.innerHTML = `
-                    <div class="text-center p-6 bg-red-900 bg-opacity-30 rounded-lg">
-                        <h3 class="text-2xl font-bold text-red-400">Oops! Something went wrong.</h3>
-                        <p class="mt-2 text-red-300">Failed to load recommendations. Please try again.</p>
-                    </div>
-                `;
+                outputContainer.innerHTML = `<div class="text-center p-6 bg-red-900 bg-opacity-30 rounded-lg"><h3 class="text-2xl font-bold text-red-400">Oops! Something went wrong.</h3><p class="mt-2 text-red-300">Failed to load recommendations. Please try again.</p></div>`;
             }
         });
 
+        // --- Recommendation Rendering Logic (Same as genre_search page, now without hover effect) ---
         function renderRecommendations(recommendations) {
             if (!recommendations || recommendations.length === 0) {
-                outputContainer.innerHTML = `
-                    <div class="text-center p-6 bg-gray-700 rounded-lg">
-                        <h3 class="text-2xl font-bold text-gray-300">No Recommendations Found</h3>
-                        <p class="mt-2 text-gray-400">We couldn't find any recommendations based on your input. Try a different manga or genre.</p>
-                    </div>
-                `;
+                outputContainer.innerHTML = `<div class="text-center p-6 bg-gray-700 rounded-lg"><h3 class="text-2xl font-bold text-gray-300">No Recommendations Found</h3><p class="mt-2 text-gray-400">We couldn't find any recommendations based on your input. Try a different manga or genre.</p></div>`;
                 return;
             }
-
+            const createPills = (items, type) => {
+                if (!items || items.trim() === '') return '';
+                const itemList = items.split(',').map(item => item.trim());
+                return `<div class="flex flex-wrap items-center gap-2 text-xs mt-2"><span class="font-bold text-gray-400">${type}:</span>${itemList.map(item => `<span class="bg-gray-900 px-2 py-1 rounded">${item}</span>`).join('')}</div>`;
+            };
             const recommendationsHTML = `
                 <h2 class="text-3xl font-bold text-center mb-8">Your Recommendations</h2>
-                <div class="flex flex-wrap gap-6 justify-center">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     ${recommendations.map(manga => `
-                        <a href="${manga.URL || '#'}" target="_blank" class="card rounded-lg overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 block w-48">
-                            <img class="w-full h-64 object-cover manga-card-image" 
-                                 src="${manga.Thumbnail || 'https://placehold.co/150x225/2d3748/ffffff?text=No+Image'}" 
-                                 data-title="${manga.Title}"
-                                 alt="Cover for ${manga.Title}">
-                            <div class="p-4">
-                                <h3 class="font-bold text-md mb-2 truncate" title="${manga['English Title'] || manga.Title}">${manga['English Title'] || manga.Title}</h3>
-                                <p class="text-gray-400 text-sm mb-2">Score: 
-                                    <span class="font-semibold text-indigo-400">${manga.Score ? manga.Score.toFixed(2) : 'N/A'}</span>
+                        <div class="bg-gray-700 rounded-lg shadow-lg flex flex-col md:flex-row overflow-hidden">
+                            <img src="${manga.Thumbnail || 'https://placehold.co/200x300/1a202c/ffffff?text=No+Image'}" 
+                                 alt="Cover for ${manga.Title}" 
+                                 class="w-full md:w-48 h-64 md:h-auto object-cover flex-shrink-0">
+                            <div class="p-5 flex flex-col flex-grow">
+                                <h3 class="font-bold text-xl mb-2 text-white">${manga['English Title'] || manga.Title}</h3>
+                                <div class="flex items-center gap-6 mb-3 text-sm text-gray-300">
+                                    <span>⭐ <span class="font-bold text-indigo-400">${manga.Score ? manga.Score.toFixed(2) : 'N/A'}</span></span>
+                                    <span>🔥 <span class="font-bold text-indigo-400">#${manga.Popularity || 'N/A'}</span></span>
+                                </div>
+                                <p class="text-gray-400 text-sm mb-4 flex-grow">
+                                    ${manga.Synopsis ? manga.Synopsis.substring(0, 180) + '...' : 'No synopsis available.'}
                                 </p>
-                                <p class="text-gray-400 text-xs truncate" title="${manga.Genres}">${manga.Genres || 'N/A'}</p>
+                                <div class="text-xs">
+                                    ${createPills(manga.Genres, 'Genres')}
+                                    ${createPills(manga.Themes, 'Themes')}
+                                </div>
+                                <div class="mt-auto pt-4 text-right">
+                                    <a href="${manga.URL || '#'}" target="_blank" class="text-indigo-400 font-semibold hover:underline text-sm">
+                                        View on MyAnimeList &rarr;
+                                    </a>
+                                 </div>
                             </div>
-                        </a>
+                        </div>
                     `).join('')}
                 </div>
             `;
             outputContainer.innerHTML = recommendationsHTML;
-            
-            
         }
     </script>
 </body>
