@@ -11,7 +11,7 @@
     
     <nav class="fixed top-0 left-0 right-0 bg-gray-800/80 backdrop-blur-sm shadow-md z-50">
         <div class="container mx-auto flex justify-between items-center p-4">
-            <a href="#" class="text-xl font-bold text-white hover:text-indigo-400 transition-colors">Taylor Baker</a>
+            <a href="#" class="text-xl font-bold text-white hover:text-indigo-400 transition-colors"></a>
             <div class="hidden md:flex items-center gap-4">
                 <a href="#projects" class="text-gray-300 hover:text-white transition-colors">Projects</a>
                 <a href="/resume" target="_blank" class="text-gray-300 hover:text-white transition-colors">Resume</a>
@@ -80,16 +80,16 @@
                     <ul class="space-y-2 text-gray-400">
                         <li>PostgreSQL</li>
                         <li>MySQL</li>
-                        <li>MongoDB</li>
-                        <li>BigQuery</li>
+                        <li></li>
+                        <li></li>
                     </ul>
                 </div>
                 <div>
                     <h3 class="text-xl font-semibold text-indigo-400 mb-3">Tools & Platforms</h3>
                     <ul class="space-y-2 text-gray-400">
-                        <li>Docker</li>
+                        <li>Render</li>
                         <li>Git & GitHub</li>
-                        <li>GCP / AWS</li>
+                        <li></li>AWS</li>
                         <li>Flask</li>
                     </ul>
                 </div>
@@ -98,61 +98,27 @@
 
         <section id="projects" class="py-16">
             <h2 class="text-3xl font-bold text-center text-white mb-12">Featured Projects</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div class="space-y-16">
                 
-                <div class="bg-gray-800 rounded-lg shadow-xl overflow-hidden transform hover:-translate-y-2 transition-transform duration-300">
-                    <img src="https://placehold.co/600x400/1a202c/4f46e5?text=Manga+Recommender" alt="Manga Recommendation System Project" class="w-full h-48 object-cover">
-                    <div class="p-6">
-                        <h3 class="text-2xl font-bold text-white mb-2">User-to-User Manga Recommender</h3>
-                        <p class="text-gray-400 mb-4">A collaborative filtering model that provides personalized manga recommendations based on user ratings and reading history.</p>
-                        <div class="flex flex-wrap gap-2 mb-4">
+                <div class="bg-gray-800 rounded-lg shadow-xl p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
+                    <div class="md:w-3/5 text-center md:text-left">
+                        <h3 class="text-3xl font-bold text-white mb-3">User-to-User Manga Recommender</h3>
+                        <p class="text-gray-400 mb-6">A collaborative filtering model that provides personalized manga recommendations based on user ratings and reading history. This project showcases my ability to build and deploy a full-stack machine learning application.</p>
+                        <div class="flex flex-wrap gap-2 mb-6 justify-center md:justify-start">
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Python</span>
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Flask</span>
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Scikit-learn</span>
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">SQL</span>
                         </div>
-                        <div class="flex gap-4 mt-4">
-                            <a href="https://github.com/ProXcelerator/Manga-Recommendation-System" target="_blank" class="w-full text-center bg-gray-700 text-white py-2 rounded-lg hover:bg-gray-600 transition-colors">Source Code</a>
-                            <a href="/manga_recommendation_ui" class="w-full text-center bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-colors">Live Demo</a>
+                        <div class="flex gap-4 justify-center md:justify-start">
+                            <a href="https://github.com/ProXcelerator/Manga-Recommendation-System" target="_blank" class="px-5 py-2.5 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors">Source Code</a>
+                            <a href="/manga_recommendation_ui" class="px-5 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">Live Demo</a>
                         </div>
                     </div>
-                </div>
-
-                <div class="bg-gray-800 rounded-lg shadow-xl overflow-hidden transform hover:-translate-y-2 transition-transform duration-300">
-                    <img src="https://placehold.co/600x400/1a202c/c026d3?text=Project+Two" alt="Project Two" class="w-full h-48 object-cover">
-                    <div class="p-6">
-                        <h3 class="text-2xl font-bold text-white mb-2">Another Awesome Project</h3>
-                        <p class="text-gray-400 mb-4">Description of the problem this project solves and the key outcomes or results.</p>
-                        <div class="flex flex-wrap gap-2 mb-4">
-                            <span class="bg-pink-500/20 text-pink-300 text-xs font-semibold px-2.5 py-1 rounded-full">TensorFlow</span>
-                            <span class="bg-pink-500/20 text-pink-300 text-xs font-semibold px-2.5 py-1 rounded-full">GCP</span>
-                            <span class="bg-pink-500/20 text-pink-300 text-xs font-semibold px-2.5 py-1 rounded-full">Docker</span>
-                        </div>
-                        <div class="flex gap-4 mt-4">
-                            <a href="#" class="w-full text-center bg-gray-700 text-white py-2 rounded-lg hover:bg-gray-600 transition-colors">Source Code</a>
-                        </div>
+                    <div class="md:w-2/5 w-full">
+                        <img src="/static/manga_gif.gif" alt="Manga Recommender GIF" class="rounded-lg shadow-lg w-full">
                     </div>
                 </div>
-
-                <div class="bg-gray-800 rounded-lg shadow-xl overflow-hidden transform hover:-translate-y-2 transition-transform duration-300">
-                    <img src="https://placehold.co/600x400/1a202c/16a34a?text=Project+Three" alt="Project Three" class="w-full h-48 object-cover">
-                    <div class="p-6">
-                        <h3 class="text-2xl font-bold text-white mb-2">A Third Great Project</h3>
-                        <p class="text-gray-400 mb-4">Briefly explain what this project is and why it's a valuable demonstration of your skills.</p>
-                        <div class="flex flex-wrap gap-2 mb-4">
-                            <span class="bg-green-500/20 text-green-300 text-xs font-semibold px-2.5 py-1 rounded-full">PyTorch</span>
-                             <span class="bg-green-500/20 text-green-300 text-xs font-semibold px-2.5 py-1 rounded-full">AWS</span>
-                            <span class="bg-green-500/20 text-green-300 text-xs font-semibold px-2.5 py-1 rounded-full">SQL</span>
-                        </div>
-                        <div class="flex gap-4 mt-4">
-                            <a href="#" class="w-full text-center bg-gray-700 text-white py-2 rounded-lg hover:bg-gray-600 transition-colors">Source Code</a>
-                            <a href="#" class="w-full text-center bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors">View Article</a>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </section>
 
     </main>
     
