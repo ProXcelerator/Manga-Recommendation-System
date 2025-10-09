@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\taylo\Desktop\Portfolio-Project-Recommendation-System\final project folder\venv"
+VIRTUAL_ENV="C:\Users\taylo\Desktop\Portfolio-Project-Recommendation-System\final-project-folder\Manga-Recommendation-System\venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
