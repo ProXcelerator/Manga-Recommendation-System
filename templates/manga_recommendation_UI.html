@@ -20,7 +20,6 @@
             border: 1px solid #4a5568;
             border-radius: 0.375rem;
             position: absolute;
-            z-index: 10;
             width: 100%;
             max-height: 200px;
             overflow-y: auto;
@@ -36,6 +35,24 @@
             background-color: #2d3748;
             border: 1px solid #4a5568;
         }
+        /* Style for the collapsible genre section */
+        details > summary {
+            cursor: pointer;
+            list-style: none; /* Hide the default marker */
+        }
+        details > summary::-webkit-details-marker {
+            display: none; /* Hide the default marker in Chrome/Safari */
+        }
+        /* Custom arrow for the collapsible section */
+        details > summary::before {
+            content: '▶';
+            margin-right: 0.5rem;
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+        details[open] > summary::before {
+            transform: rotate(90deg);
+        }
     </style>
 </head>
 <body class="font-sans antialiased">
@@ -43,23 +60,23 @@
         
         <header class="text-center mb-10">
             <h1 class="text-4xl md:text-5xl font-bold text-white mb-2">Manga Recommendation Engine</h1>
-            <p class="text-lg text-gray-400">Rate your favorites to discover your next read.</p>
+            <p class="text-lg text-gray-400">Rate your favorites or pick a genre to discover your next read.</p>
         </header>
 
         <div class="max-w-4xl mx-auto bg-gray-800 rounded-lg shadow-xl p-6 md:p-8">
-            <form id="recommendation-form" action="/manga_recommendation" method="POST">
+            <form id="recommendation-form">
                 <h2 class="text-2xl font-semibold mb-6 border-b-2 border-gray-600 pb-3">Rate up to 3 Manga</h2>
                 <div id="manga-inputs" class="space-y-6">
                     <!-- Input Row 1 -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                         <div class="relative">
                             <label for="manga_1" class="block text-sm font-medium text-gray-300 mb-1">Manga Title 1</label>
-                            <input type="text" id="manga_1" name="manga_1" class="form-input w-full rounded-md shadow-sm" placeholder="e.g., Berserk" autocomplete="off" required>
-                            <div id="suggestions_1" class="autocomplete-suggestions mt-1"></div>
+                            <input type="text" id="manga_1" name="manga_1" class="form-input w-full rounded-md shadow-sm" placeholder="e.g., Berserk" autocomplete="off">
+                            <div id="suggestions_1" class="autocomplete-suggestions mt-1" style="z-index: 50;"></div>
                         </div>
                         <div>
                             <label for="rating_1" class="block text-sm font-medium text-gray-300 mb-1">Rating (1-10)</label>
-                            <input type="number" id="rating_1" name="rating_1" min="1" max="10" class="form-input w-full rounded-md shadow-sm" placeholder="e.g., 9" required>
+                            <input type="number" id="rating_1" name="rating_1" min="1" max="10" class="form-input w-full rounded-md shadow-sm" placeholder="e.g., 9">
                         </div>
                     </div>
                     <!-- Input Row 2 -->
@@ -67,7 +84,7 @@
                          <div class="relative">
                             <label for="manga_2" class="block text-sm font-medium text-gray-300 mb-1">Manga Title 2</label>
                             <input type="text" id="manga_2" name="manga_2" class="form-input w-full rounded-md shadow-sm" placeholder="Optional" autocomplete="off">
-                            <div id="suggestions_2" class="autocomplete-suggestions mt-1"></div>
+                            <div id="suggestions_2" class="autocomplete-suggestions mt-1" style="z-index: 40;"></div>
                         </div>
                         <div>
                             <label for="rating_2" class="block text-sm font-medium text-gray-300 mb-1">Rating (1-10)</label>
@@ -79,7 +96,7 @@
                          <div class="relative">
                             <label for="manga_3" class="block text-sm font-medium text-gray-300 mb-1">Manga Title 3</label>
                             <input type="text" id="manga_3" name="manga_3" class="form-input w-full rounded-md shadow-sm" placeholder="Optional" autocomplete="off">
-                            <div id="suggestions_3" class="autocomplete-suggestions mt-1"></div>
+                            <div id="suggestions_3" class="autocomplete-suggestions mt-1" style="z-index: 30;"></div>
                         </div>
                         <div>
                             <label for="rating_3" class="block text-sm font-medium text-gray-300 mb-1">Rating (1-10)</label>
@@ -87,6 +104,46 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Genre selection section -->
+                <div class="mt-8 pt-6 border-t border-gray-700">
+                    <details>
+                        <summary class="text-xl font-semibold text-gray-300 hover:text-white">
+                           Or, Get Recommendations by Genre
+                        </summary>
+                        <div class="mt-4 space-y-4">
+                            <p class="text-sm text-gray-400">If you prefer, select up to three genres to find popular manga.</p>
+                            <div>
+                                <label for="genre_1" class="block text-sm font-medium text-gray-300 mb-1">Genre 1</label>
+                                <select id="genre_1" name="genre_1" class="form-select w-full rounded-md shadow-sm">
+                                    <option value="">-- Select a Genre --</option>
+                                    {% for genre in genres %}
+                                    <option value="{{ genre }}">{{ genre }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="genre_2" class="block text-sm font-medium text-gray-300 mb-1">Genre 2</label>
+                                <select id="genre_2" name="genre_2" class="form-select w-full rounded-md shadow-sm">
+                                    <option value="">-- Optional --</option>
+                                    {% for genre in genres %}
+                                    <option value="{{ genre }}">{{ genre }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="genre_3" class="block text-sm font-medium text-gray-300 mb-1">Genre 3</label>
+                                <select id="genre_3" name="genre_3" class="form-select w-full rounded-md shadow-sm">
+                                    <option value="">-- Optional --</option>
+                                    {% for genre in genres %}
+                                    <option value="{{ genre }}">{{ genre }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
 
                 <div class="mt-8 text-center">
                     <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105">
@@ -96,27 +153,11 @@
             </form>
         </div>
         
-        {% if recommendations %}
-        <div class="mt-12">
-            <h2 class="text-3xl font-bold text-center mb-8">Your Recommendations</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
-                {% for manga in recommendations %}
-                <a href="{{ manga.Link }}" target="_blank" class="card rounded-lg overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 block">
-                    <!-- Added data-title attribute and a specific class for easier selection in JS -->
-                    <img class="w-full h-64 object-cover manga-card-image" 
-                         src="{{ manga.Thumbnail }}" 
-                         data-title="{{ manga.Title }}"
-                         alt="Cover for {{ manga.Title }}">
-                    <div class="p-4">
-                        <h3 class="font-bold text-md mb-2 truncate" title="{{ manga.Title }}">{{ manga.Title }}</h3>
-                        <p class="text-gray-400 text-sm mb-2">Score: <span class="font-semibold text-indigo-400">{{ '%.2f'|format(manga.Score|float) if manga.Score else 'N/A' }}</span></p>
-                        <p class="text-gray-400 text-xs truncate" title="{{ manga.Genres }}">Genres: {{ manga.Genres if manga.Genres else 'N/A' }}</p>
-                    </div>
-                </a>
-                {% endfor %}
-            </div>
+        <!-- This div will hold the recommendations -->
+        <div id="recommendations-output" class="mt-12">
+            <!-- Loading spinner will be injected here -->
+            <!-- Recommendations will be injected here -->
         </div>
-        {% endif %}
 
     </div>
 
@@ -165,54 +206,112 @@
                 }
             });
         }
-
-        // Initialize autocomplete for all three input fields
         setupAutocomplete('manga_1', 'suggestions_1');
         setupAutocomplete('manga_2', 'suggestions_2');
         setupAutocomplete('manga_3', 'suggestions_3');
 
-        // --- NEW: Jikan API Image Fetcher ---
-        // This script runs after the page loads and replaces placeholder images with real ones.
-        document.addEventListener('DOMContentLoaded', () => {
-            const imageElements = document.querySelectorAll('.manga-card-image');
 
-            const fetchMangaImage = async (imgElement) => {
-                const title = imgElement.dataset.title;
-                
-                // Only run the API call if the image is a placeholder and has a title
-                if (!title || !imgElement.src.includes('placehold.co')) {
-                    return;
+        // --- Dynamic Recommendation Fetching ---
+        const form = document.getElementById('recommendation-form');
+        const outputContainer = document.getElementById('recommendations-output');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Prevent the default form submission (page reload)
+
+            // Show loading state
+            outputContainer.innerHTML = `
+                <div class="text-center">
+                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-400"></div>
+                    <p class="mt-4 text-lg text-gray-400">Finding your next favorite manga...</p>
+                </div>
+            `;
+            
+            // 1. Gather data from the form
+            const book_ratings = {};
+            for (let i = 1; i <= 3; i++) {
+                const title = document.getElementById(`manga_${i}`).value.trim();
+                const rating = document.getElementById(`rating_${i}`).value;
+                if (title && rating) {
+                    book_ratings[title] = parseInt(rating, 10);
                 }
+            }
 
-                const encodedTitle = encodeURIComponent(title);
-                const apiUrl = `https://api.jikan.moe/v4/manga?q=${encodedTitle}&limit=1`;
-
-                try {
-                    const response = await fetch(apiUrl);
-                    // Add a small delay to avoid hitting rate limits if many images load at once
-                    await new Promise(resolve => setTimeout(resolve, 250)); 
-                    
-                    if (!response.ok) {
-                        console.warn(`Jikan API request failed for "${title}" with status: ${response.status}`);
-                        return; // Keep placeholder on API error (e.g., 429 Too Many Requests)
-                    }
-                    
-                    const data = await response.json();
-                    const imageUrl = data?.data?.[0]?.images?.jpg?.image_url;
-
-                    if (imageUrl) {
-                        imgElement.src = imageUrl; // Update the image source with the fetched one
-                    } else {
-                        console.warn(`No image found on Jikan API for: "${title}"`);
-                    }
-                } catch (error) {
-                    console.error(`Failed to fetch image for "${title}":`, error);
+            const selected_genres = [];
+            for (let i = 1; i <= 3; i++) {
+                const genre = document.getElementById(`genre_${i}`).value;
+                if (genre) {
+                    selected_genres.push(genre);
                 }
+            }
+
+            const payload = {
+                ratings: book_ratings,
+                genres: selected_genres
             };
+            
+            // 2. Send data to the API endpoint
+            try {
+                const response = await fetch('/api/recommend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
 
-            // Process each recommendation card's image
-            imageElements.forEach(fetchMangaImage);
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+
+                const recommendations = await response.json();
+                
+                // 3. Render the results
+                renderRecommendations(recommendations);
+
+            } catch (error) {
+                console.error("Failed to get recommendations:", error);
+                outputContainer.innerHTML = `
+                    <div class="text-center p-6 bg-red-900 bg-opacity-30 rounded-lg">
+                        <h3 class="text-2xl font-bold text-red-400">Oops! Something went wrong.</h3>
+                        <p class="mt-2 text-red-300">Failed to load recommendations. Please try again.</p>
+                    </div>
+                `;
+            }
         });
+
+        function renderRecommendations(recommendations) {
+            if (!recommendations || recommendations.length === 0) {
+                outputContainer.innerHTML = `
+                    <div class="text-center p-6 bg-gray-700 rounded-lg">
+                        <h3 class="text-2xl font-bold text-gray-300">No Recommendations Found</h3>
+                        <p class="mt-2 text-gray-400">We couldn't find any recommendations based on your input. Try a different manga or genre.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const recommendationsHTML = `
+                <h2 class="text-3xl font-bold text-center mb-8">Your Recommendations</h2>
+                <div class="flex flex-wrap gap-6 justify-center">
+                    ${recommendations.map(manga => `
+                        <a href="${manga.URL || '#'}" target="_blank" class="card rounded-lg overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 block w-48">
+                            <img class="w-full h-64 object-cover manga-card-image" 
+                                 src="${manga.Thumbnail || 'https://placehold.co/150x225/2d3748/ffffff?text=No+Image'}" 
+                                 data-title="${manga.Title}"
+                                 alt="Cover for ${manga.Title}">
+                            <div class="p-4">
+                                <h3 class="font-bold text-md mb-2 truncate" title="${manga['English Title'] || manga.Title}">${manga['English Title'] || manga.Title}</h3>
+                                <p class="text-gray-400 text-sm mb-2">Score: 
+                                    <span class="font-semibold text-indigo-400">${manga.Score ? manga.Score.toFixed(2) : 'N/A'}</span>
+                                </p>
+                                <p class="text-gray-400 text-xs truncate" title="${manga.Genres}">${manga.Genres || 'N/A'}</p>
+                            </div>
+                        </a>
+                    `).join('')}
+                </div>
+            `;
+            outputContainer.innerHTML = recommendationsHTML;
+            
+            
+        }
     </script>
 </body>
 </html>
