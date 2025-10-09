@@ -20,7 +20,27 @@ CORS(application)
 # -------------------------------------------- Load Data and Models ---------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 print("Loading data and models for the recommender system...")
+
 # Safely load models with error handling
+try:
+    # Load the CSV file into a pandas DataFrame
+    synopsis_df = pd.read_csv('synop.csv')
+    
+    # Create a 'normalized' title column for reliable matching (lowercase, no extra spaces)
+    synopsis_df['normalized_title'] = synopsis_df['Title'].str.lower().str.strip()
+    
+    # Create the fast lookup dictionary: {normalized_title: Synopsis}
+    # This is much faster than searching the DataFrame every time.
+    synopsis_lookup = pd.Series(synopsis_df.Synopsis.values, index=synopsis_df.normalized_title).to_dict()
+    
+    print("synop.csv loaded successfully into lookup dictionary.")
+
+except FileNotFoundError:
+    print("Warning: synop.csv not found. Synopses will not be available.")
+    synopsis_lookup = {} # Use an empty dict to prevent errors
+
+
+
 try:
     # --- Load SVD Model and Mappings from Pickle Files ---
     with open('svd_model.pkl', 'rb') as f:
@@ -115,6 +135,8 @@ def fetch_manga_from_jikan(title_query: str) -> dict | None:
             'English Title': manga.get('title_english'),
             'URL': manga.get('url'),
             'Thumbnail': manga.get('images', {}).get('jpg', {}).get('image_url', "https://placehold.co/150x225/2d3748/ffffff?text=No+Image"),
+            'Popularity': manga.get('popularity'),
+            'Synopsis': manga.get('synopsis'),
             'Score': manga.get('score'),
             'Genres': genres_str,
             'Themes': themes_str
@@ -298,6 +320,13 @@ def manga_recommendation_ui_page():
     
     return render_template("manga_recommendation_UI.html", genres=all_genres)
 
+
+@application.route('/genre_search')
+def genre_search():
+    """Serves the genre recommendation page and provides the genre list."""
+    # This now passes the list of all genres to your HTML template
+    return render_template("genre_search.html", genres=all_genres)
+
 # ---------------------------------------------------------------------------------------------------------------------#
 # -------------------------------------- API ROUTES (For UI and other apps) -------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
@@ -307,7 +336,7 @@ def manga_recommendation_ui_page():
 @application.route('/api/recommend', methods=['POST'])
 def api_recommend():
     """
-    API endpoint to get recommendations.
+    API endpoint to get recommendations, with Jikan fallback for missing data.
     """
     if manga_data is None:
         return jsonify({"error": "Manga data not loaded on server."}), 500
@@ -334,26 +363,35 @@ def api_recommend():
             if not local_result.empty:
                 manga_details = local_result.iloc[0].to_dict()
 
-                # ADDED: This block converts the set to a list to prevent the JSON error.
-                if 'Genre_Set' in manga_details and isinstance(manga_details['Genre_Set'], set):
-                    manga_details['Genre_Set'] = list(manga_details['Genre_Set'])
-                
-                is_english_title_missing = pd.isna(manga_details.get('English Title')) or not manga_details.get('English Title')
+                original_title = manga_details.get('Title', '')
+                normalized_title = original_title.lower().strip()
+                manga_details['Synopsis'] = synopsis_lookup.get(normalized_title, None)
 
-                if is_english_title_missing:
+                # --- UPDATED JIKAN FALLBACK LOGIC ---
+                # Check if crucial data (synopsis, English title, or popularity) is missing
+                is_data_missing = (
+                    pd.isna(manga_details.get('English Title')) or not manga_details.get('English Title') or
+                    not manga_details.get('Synopsis') or
+                    pd.isna(manga_details.get('Popularity')) # <-- ADDED THIS CHECK
+                )
+
+                if is_data_missing:
+                    print(f"--- LOG: Missing local data for '{title}'. Fetching from Jikan... ---")
                     jikan_result = fetch_manga_from_jikan(title)
                     if jikan_result:
-                        final_recommendations.append(jikan_result)
-                    else:
-                        final_recommendations.append(manga_details)
-                else:
-                    final_recommendations.append(manga_details)
+                        manga_details.update(jikan_result)
+                
+                final_recommendations.append(manga_details)
             else:
                 jikan_result = fetch_manga_from_jikan(title)
                 if jikan_result:
                     final_recommendations.append(jikan_result)
+        
+        df = pd.DataFrame(final_recommendations)
+        if 'Genre_Set' in df.columns:
+             df['Genre_Set'] = df['Genre_Set'].apply(lambda x: list(x) if isinstance(x, set) else x)
+        cleaned_recs = df.replace({np.nan: None}).to_dict(orient='records')
 
-        cleaned_recs = pd.DataFrame(final_recommendations).replace({np.nan: None}).to_dict(orient='records')
         return jsonify(cleaned_recs)
 
     except Exception as e:
