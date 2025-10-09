@@ -236,7 +236,7 @@ def get_hybrid_recommendations(user_ratings, n_recommendations=5):
 # --------------------------------------- WEBSITE & API ROUTES --------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
 
-@application.route('/home')
+@application.route('/')
 def home():
     """Serves the main home page."""
     return render_template("home.html")
