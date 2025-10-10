@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synopsis-Based Manga Recommender</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center p-4 sm:p-8">
+
+    <div class="w-full max-w-4xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-cyan-400">Synopsis Recommender</h1>
+            <p class="text-lg text-gray-400 mt-2">Find manga with similar themes and plot structures.</p>
+        </header>
+
+        <!-- Search Section -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-lg mb-8">
+            <div class="flex flex-col sm:flex-row gap-4">
+                <div class="relative flex-grow">
+                     <input type="text" id="manga-search-input" list="manga-suggestions"
+                           class="w-full bg-gray-700 border-2 border-gray-600 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-cyan-500 transition duration-300"
+                           placeholder="Type a manga title (e.g., 'Berserk')">
+                     <datalist id="manga-suggestions"></datalist>
+                </div>
+                <button id="search-button" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-6 rounded-lg transition duration-300 shadow-md">
+                    Find Similar
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <main id="results-container" class="space-y-6">
+             <!-- Loading Spinner -->
+            <div id="loader" class="text-center py-10 hidden">
+                <svg class="animate-spin h-10 w-10 text-cyan-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-4 text-gray-400">Searching for similar plotlines...</p>
+            </div>
+            <!-- Initial Message / Error Message -->
+            <div id="message-display" class="text-center py-10 bg-gray-800 rounded-lg">
+                <p class="text-gray-400">Recommendations will appear here.</p>
+            </div>
+            <!-- Dynamic results will be injected here -->
+        </main>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('manga-search-input');
+        const searchButton = document.getElementById('search-button');
+        const suggestionsDatalist = document.getElementById('manga-suggestions');
+        const resultsContainer = document.getElementById('results-container');
+        const loader = document.getElementById('loader');
+        const messageDisplay = document.getElementById('message-display');
+
+        // Autocomplete search functionality
+        searchInput.addEventListener('input', async (e) => {
+            const query = e.target.value;
+            if (query.length < 3) {
+                suggestionsDatalist.innerHTML = '';
+                return;
+            }
+            try {
+                const response = await fetch(`http://127.0.0.1:5000/api/search?q=${encodeURIComponent(query)}`);
+                if (!response.ok) return;
+                const titles = await response.json();
+                
+                suggestionsDatalist.innerHTML = titles.map(title => `<option value="${title}"></option>`).join('');
+            } catch (error) {
+                console.error("Autocomplete search failed:", error);
+            }
+        });
+        
+        // Handle search button click
+        searchButton.addEventListener('click', handleSearch);
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSearch();
+            }
+        });
+
+
+        async function handleSearch() {
+            const queryTitle = searchInput.value.trim();
+            if (!queryTitle) {
+                displayMessage("Please enter a manga title.");
+                return;
+            }
+
+            // --- UI Changes for Loading State ---
+            loader.classList.remove('hidden');
+            resultsContainer.innerHTML = ''; // Clear previous results
+            resultsContainer.appendChild(loader); // Move loader inside results
+            messageDisplay.classList.add('hidden');
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/synopsis_recommend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: queryTitle }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Server responded with status: ${response.status}`);
+                }
+
+                const recommendations = await response.json();
+                displayRecommendations(recommendations, queryTitle);
+
+            } catch (error) {
+                console.error('Error fetching synopsis recommendations:', error);
+                displayMessage(`Error: ${error.message}. Please try another title.`);
+            } finally {
+                loader.classList.add('hidden');
+            }
+        }
+
+        function displayRecommendations(recommendations, queryTitle) {
+            resultsContainer.innerHTML = ''; // Clear loader
+
+            if (!recommendations || recommendations.length === 0) {
+                displayMessage(`No similar manga found for "${queryTitle}". Try a more popular title.`);
+                return;
+            }
+
+            // Create and append the new results
+            recommendations.forEach(manga => {
+                const card = document.createElement('div');
+                card.className = 'bg-gray-800 rounded-xl shadow-lg p-4 flex flex-col sm:flex-row gap-5 transform hover:scale-105 transition-transform duration-300';
+                
+                const englishTitle = manga['English Title'] ? `<h3 class="text-lg font-semibold text-gray-300">${manga['English Title']}</h3>` : '';
+                const synopsis = manga.Synopsis ? manga.Synopsis.substring(0, 250) + '...' : 'No synopsis available.';
+
+                card.innerHTML = `
+                    <div class="w-full sm:w-1/5 flex-shrink-0">
+                        <img src="${manga.Thumbnail}" alt="Thumbnail for ${manga.Title}" class="w-full h-auto object-cover rounded-lg shadow-md">
+                    </div>
+                    <div class="w-full sm:w-4/5">
+                        <h2 class="text-2xl font-bold text-cyan-400">${manga.Title}</h2>
+                        ${englishTitle}
+                        <p class="text-sm text-gray-500 mt-1 mb-3">Genres: ${manga.Genres || 'N/A'}</p>
+                        <p class="text-gray-400 text-justify">${synopsis}</p>
+                    </div>
+                `;
+                resultsContainer.appendChild(card);
+            });
+        }
+        
+        function displayMessage(message) {
+            resultsContainer.innerHTML = ''; // Clear everything
+            const messageEl = document.createElement('div');
+            messageEl.className = "text-center py-10 bg-gray-800 rounded-lg";
+            messageEl.innerHTML = `<p class="text-gray-400">${message}</p>`;
+            resultsContainer.appendChild(messageEl);
+        }
+
+    </script>
+</body>
+</html>

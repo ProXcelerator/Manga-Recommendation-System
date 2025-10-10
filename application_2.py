@@ -7,6 +7,9 @@ import traceback
 from scipy.sparse import csr_matrix
 from collections import Counter
 from jikanpy import Jikan
+# --- NEW: Add imports for the synopsis recommender ---
+from sentence_transformers import SentenceTransformer, util
+# --- END NEW ---
 jikan = Jikan()
 
 # ---------------------------------------------------------------------------------------------------------------------#
@@ -100,6 +103,27 @@ except FileNotFoundError as e:
     manga_data = None
     svd_model = None
     all_genres = []
+
+# --- NEW: Load Synopsis Embeddings ---
+try:
+    with open('embeddings.pkl', 'rb') as f:
+        synopsis_embeddings_data = pickle.load(f)
+    print("✅ Synopsis embeddings (embeddings.pkl) loaded successfully.")
+except FileNotFoundError:
+    print("⚠️ Warning: embeddings.pkl not found. Synopsis recommender will be disabled.")
+    synopsis_embeddings_data = None
+# --- END NEW ---
+
+# --- NEW: Load SentenceTransformer Model ---
+st_model = None
+try:
+    if synopsis_embeddings_data is not None:
+        st_model = SentenceTransformer('all-MiniLM-L6-v2')
+        print("✅ SentenceTransformer model loaded for dynamic embeddings.")
+except Exception as e:
+    print(f"⚠️ Warning: Could not load SentenceTransformer model: {e}. Dynamic embedding will be disabled.")
+# --- END NEW ---
+
 
 # ---------------------------------------------------------------------------------------------------------------------#
 # ----------------------------------- Helper Functions ----------------------------------------------------------------#
@@ -254,6 +278,67 @@ def get_hybrid_recommendations(user_ratings, n_recommendations=5):
 
     return final_recommendations[:n_recommendations]
 
+# --- MODIFIED: Synopsis Recommender Helper Function ---
+def recommend_manga_by_synopsis(query_title, top_k=5):
+    """
+    Finds similar manga by synopsis. If the title isn't in the pre-computed
+    database, it fetches the synopsis from Jikan and creates an embedding on the fly.
+    """
+    if synopsis_embeddings_data is None:
+        print("LOG: Synopsis recommender is disabled because embeddings are not loaded.")
+        return []
+
+    titles = synopsis_embeddings_data['titles']
+    embeddings = synopsis_embeddings_data['embeddings']
+    query_embedding = None
+    query_index = -1
+
+    try:
+        # First, try to find the title in our pre-computed list
+        query_index = [t.lower() for t in titles].index(query_title.lower())
+        query_embedding = embeddings[query_index]
+        print(f"--- LOG: Found '{query_title}' in pre-computed embeddings. ---")
+    except ValueError:
+        # If not found, use the Jikan and live-embedding fallback
+        print(f"--- LOG: '{query_title}' not in embeddings. Attempting Jikan lookup. ---")
+        if st_model is None:
+            print("--- LOG: SentenceTransformer model not loaded. Cannot perform dynamic recommendation. ---")
+            return []
+        
+        jikan_result = fetch_manga_from_jikan(query_title)
+        if jikan_result and jikan_result.get('Synopsis'):
+            synopsis = jikan_result['Synopsis']
+            print(f"--- LOG: Found synopsis via Jikan. Generating new embedding... ---")
+            query_embedding = st_model.encode(synopsis)
+        else:
+            print(f"--- LOG: Could not find a synopsis for '{query_title}' via Jikan. ---")
+            return []
+
+    # If we have an embedding (either from cache or Jikan), find recommendations
+    if query_embedding is not None:
+        cosine_scores = util.cos_sim(query_embedding, embeddings)[0]
+        top_indices = np.argsort(-cosine_scores)
+
+        recommendations = []
+        query_title_lower = query_title.lower()
+        for idx in top_indices:
+            rec_title = titles[idx]
+            rec_title_lower = rec_title.lower()
+
+            if idx == query_index: # Skip the exact title if it was in the original list
+                continue
+            if query_title_lower in rec_title_lower: # Skip sequels/variations
+                print(f"--- LOG: Filtering out '{rec_title}' as it's a variation of '{query_title}'. ---")
+                continue
+
+            recommendations.append(rec_title)
+            if len(recommendations) >= top_k:
+                break
+        return recommendations
+    
+    return [] # Fallback
+# --- END MODIFIED ---
+
 # ---------------------------------------------------------------------------------------------------------------------#
 # --------------------------------------- WEBSITE & API ROUTES --------------------------------------------------------#
 # ---------------------------------------------------------------------------------------------------------------------#
@@ -272,6 +357,11 @@ def projects():
 def resume():
     """Serves the resume page."""
     return render_template("resume.html")
+
+@application.route('/synopsis_search')
+def synopsis_search_page():
+    """Serves the synopsis-based recommender page."""
+    return render_template("synopsis_search.html")
 
 @application.route('/manga_recommendation', methods=['GET', 'POST'])
 def manga_recommendation_page():
@@ -399,6 +489,56 @@ def api_recommend():
         traceback.print_exc()
         return jsonify({"error": "An internal error occurred during recommendation."}), 500
 
+# --- NEW: Synopsis Recommender API Route ---
+@application.route('/api/synopsis_recommend', methods=['POST'])
+def api_synopsis_recommend():
+    """
+    API endpoint to get recommendations based on synopsis similarity.
+    """
+    if synopsis_embeddings_data is None:
+        return jsonify({"error": "Synopsis recommender is not available."}), 503
+
+    try:
+        data = request.get_json()
+        query_title = data.get('title')
+
+        if not query_title:
+            return jsonify({"error": "A 'title' must be provided."}), 400
+
+        # Get the list of recommended titles from the helper function
+        recommended_titles = recommend_manga_by_synopsis(query_title, top_k=5)
+
+        if not recommended_titles:
+            return jsonify([])
+
+        # Fetch full manga details for the recommended titles
+        final_recommendations = []
+        for title in recommended_titles:
+            # Use the master lookup to find the canonical title, case-insensitively
+            canonical_title = any_title_to_original_title.get(title.lower())
+            
+            if canonical_title:
+                local_result = manga_data[manga_data['Title'] == canonical_title]
+                if not local_result.empty:
+                    manga_details = local_result.iloc[0].to_dict()
+                    # Add synopsis from our lookup
+                    manga_details['Synopsis'] = synopsis_lookup.get(canonical_title.lower().strip())
+                    final_recommendations.append(manga_details)
+
+        # Clean up data for JSON response
+        df = pd.DataFrame(final_recommendations)
+        if 'Genre_Set' in df.columns:
+             df['Genre_Set'] = df['Genre_Set'].apply(lambda x: list(x) if isinstance(x, set) else x)
+        cleaned_recs = df.replace({np.nan: None}).to_dict(orient='records')
+
+        return jsonify(cleaned_recs)
+
+    except Exception as e:
+        print(f"--- FATAL ERROR in /api/synopsis_recommend: {e} ---")
+        traceback.print_exc()
+        return jsonify({"error": "An internal error occurred."}), 500
+# --- END NEW ---
+
 import numpy as np # Make sure numpy is imported at the top of your file
 
 @application.route('/api/search', methods=['GET'])
@@ -443,3 +583,4 @@ def search_manga():
 # Run the app
 if __name__ == '__main__':
     application.run(host="localhost", port=5000, debug=True)
+
