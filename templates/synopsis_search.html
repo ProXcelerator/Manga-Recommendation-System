@@ -9,10 +9,49 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Darker background from new theme */
+        }
+        /* Style for keyword pills */
+        .theme-pill {
+            display: inline-block;
+            background-color: #374151; /* gray-700 */
+            color: #d1d5db; /* gray-300 */
+            padding: 0.35rem 1rem;
+            margin: 0.25rem;
+            border-radius: 9999px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        .theme-pill:hover {
+            background-color: #4b5563; /* gray-600 */
+        }
+        .theme-pill.active {
+            background-color: #164e63; /* cyan-800 */
+            color: #ecfeff; /* cyan-50 */
+            border-color: #22d3ee; /* cyan-400 */
+        }
+        .keyword-pill {
+            display: inline-block;
+            background-color: #374151; /* gray-700 */
+            color: #d1d5db; /* gray-300 */
+            padding: 0.25rem 0.75rem;
+            margin: 0.25rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 500;
         }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex flex-col items-center p-4 sm:p-8">
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="mb-6">
+            <a href="/" class="text-indigo-400 hover:text-indigo-300 transition-colors duration-200 group text-sm font-semibold">
+                <span class="group-hover:-translate-x-1 inline-block transition-transform duration-200">&larr;</span> Back to Portfolio
+            </a>
+        </div>
 
     <div class="w-full max-w-4xl mx-auto">
         <header class="text-center mb-8">
@@ -35,6 +74,12 @@
             </div>
         </div>
 
+        <!-- NEW: Theme Selection Container -->
+        <div id="theme-selection-container" class="my-6"></div>
+
+        <!-- Keywords Explanation Container (for overall themes) -->
+        <div id="keywords-container" class="my-6 text-center"></div>
+
         <!-- Results Section -->
         <main id="results-container" class="space-y-6">
              <!-- Loading Spinner -->
@@ -49,7 +94,6 @@
             <div id="message-display" class="text-center py-10 bg-gray-800 rounded-lg">
                 <p class="text-gray-400">Recommendations will appear here.</p>
             </div>
-            <!-- Dynamic results will be injected here -->
         </main>
     </div>
 
@@ -58,54 +102,92 @@
         const searchButton = document.getElementById('search-button');
         const suggestionsDatalist = document.getElementById('manga-suggestions');
         const resultsContainer = document.getElementById('results-container');
+        const keywordsContainer = document.getElementById('keywords-container');
+        const themeSelectionContainer = document.getElementById('theme-selection-container');
         const loader = document.getElementById('loader');
         const messageDisplay = document.getElementById('message-display');
+        
+        let currentQueryTitle = ''; // Store the current search title
 
         // Autocomplete search functionality
         searchInput.addEventListener('input', async (e) => {
             const query = e.target.value;
             if (query.length < 3) {
-                suggestionsDatalist.innerHTML = '';
-                return;
+                suggestionsDatalist.innerHTML = ''; return;
             }
             try {
                 const response = await fetch(`http://127.0.0.1:5000/api/search?q=${encodeURIComponent(query)}`);
                 if (!response.ok) return;
                 const titles = await response.json();
-                
                 suggestionsDatalist.innerHTML = titles.map(title => `<option value="${title}"></option>`).join('');
-            } catch (error) {
-                console.error("Autocomplete search failed:", error);
-            }
+            } catch (error) { console.error("Autocomplete search failed:", error); }
         });
         
-        // Handle search button click
-        searchButton.addEventListener('click', handleSearch);
-        searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                handleSearch();
-            }
-        });
+        // Handle search button click and enter key
+        searchButton.addEventListener('click', handleInitialSearch);
+        searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { handleInitialSearch(); } });
 
-
-        async function handleSearch() {
+        async function handleInitialSearch() {
             const queryTitle = searchInput.value.trim();
             if (!queryTitle) {
                 displayMessage("Please enter a manga title.");
                 return;
             }
+            currentQueryTitle = queryTitle; // Save the title for refining search
+            
+            // Reset UI for a new search
+            themeSelectionContainer.innerHTML = '';
+            keywordsContainer.innerHTML = '';
+            
+            // Fetch themes and initial recommendations simultaneously
+            fetchAndDisplayThemes(queryTitle);
+            fetchAndDisplayRecommendations(queryTitle, []); // Initial search with no themes
+        }
 
-            // --- UI Changes for Loading State ---
+        async function fetchAndDisplayThemes(title) {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/get_keywords', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: title }),
+                });
+                const keywords = await response.json();
+                if (keywords.length > 0) {
+                    let themesHTML = `<div class="bg-gray-800 p-4 rounded-xl mb-6"><h2 class="text-xl font-bold text-cyan-400 mb-2">Refine by Theme</h2><p class="text-gray-400 mb-4">Click on themes from '${title}' to refine your recommendations:</p><div>`;
+                    keywords.forEach(kw => {
+                        themesHTML += `<button class="theme-pill">${kw}</button>`;
+                    });
+                    themesHTML += `</div></div>`;
+                    themeSelectionContainer.innerHTML = themesHTML;
+
+                    // Add event listeners to the new theme pills
+                    document.querySelectorAll('.theme-pill').forEach(pill => {
+                        pill.addEventListener('click', handleThemeSelection);
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching themes:', error);
+            }
+        }
+        
+        function handleThemeSelection(event) {
+            event.target.classList.toggle('active');
+            const selectedThemes = Array.from(document.querySelectorAll('.theme-pill.active')).map(pill => pill.textContent);
+            fetchAndDisplayRecommendations(currentQueryTitle, selectedThemes);
+        }
+
+        async function fetchAndDisplayRecommendations(title, themes) {
             loader.classList.remove('hidden');
-            resultsContainer.innerHTML = ''; // Clear previous results
-            resultsContainer.appendChild(loader); // Move loader inside results
+            resultsContainer.innerHTML = '';
+            keywordsContainer.innerHTML = '';
+            resultsContainer.appendChild(loader);
             messageDisplay.classList.add('hidden');
 
             try {
                 const response = await fetch('http://127.0.0.1:5000/api/synopsis_recommend', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title: queryTitle }),
+                    body: JSON.stringify({ title: title, themes: themes }),
                 });
 
                 if (!response.ok) {
@@ -114,10 +196,10 @@
                 }
 
                 const recommendations = await response.json();
-                displayRecommendations(recommendations, queryTitle);
+                displayRecommendations(recommendations, title);
 
             } catch (error) {
-                console.error('Error fetching synopsis recommendations:', error);
+                console.error('Error fetching recommendations:', error);
                 displayMessage(`Error: ${error.message}. Please try another title.`);
             } finally {
                 loader.classList.add('hidden');
@@ -128,8 +210,28 @@
             resultsContainer.innerHTML = ''; // Clear loader
 
             if (!recommendations || recommendations.length === 0) {
-                displayMessage(`No similar manga found for "${queryTitle}". Try a more popular title.`);
+                displayMessage(`No similar manga found for "${queryTitle}". Try a different title or theme combination.`);
                 return;
+            }
+            
+            // Display overall thematic connections if no specific themes were selected by the user
+            const selectedThemes = document.querySelectorAll('.theme-pill.active');
+            if (selectedThemes.length === 0) {
+                const allSharedKeywords = new Set();
+                recommendations.forEach(rec => {
+                    if (rec.shared_keywords) {
+                        rec.shared_keywords.forEach(kw => allSharedKeywords.add(kw));
+                    }
+                });
+
+                if (allSharedKeywords.size > 0) {
+                    let keywordsHTML = `<div class="bg-gray-800 p-4 rounded-xl mb-6"><h2 class="text-xl font-bold text-cyan-400 mb-2">Initial Thematic Connections</h2><p class="text-gray-400 mb-4">Recommendations are based on shared themes such as:</p><div>`;
+                    allSharedKeywords.forEach(kw => {
+                        keywordsHTML += `<span class="keyword-pill">${kw}</span>`;
+                    });
+                    keywordsHTML += `</div></div>`;
+                    keywordsContainer.innerHTML = keywordsHTML;
+                }
             }
 
             // Create and append the new results
@@ -139,6 +241,15 @@
                 
                 const englishTitle = manga['English Title'] ? `<h3 class="text-lg font-semibold text-gray-300">${manga['English Title']}</h3>` : '';
                 const synopsis = manga.Synopsis ? manga.Synopsis.substring(0, 250) + '...' : 'No synopsis available.';
+                
+                let sharedKeywordsHTML = '';
+                if (manga.shared_keywords && manga.shared_keywords.length > 0) {
+                    sharedKeywordsHTML = `<div class="mt-3 pt-3 border-t border-gray-700"><p class="text-sm text-cyan-400 font-semibold mb-1">Shared Themes:</p><div class="flex flex-wrap">`;
+                    manga.shared_keywords.forEach(kw => {
+                        sharedKeywordsHTML += `<span class="keyword-pill">${kw}</span>`;
+                    });
+                    sharedKeywordsHTML += `</div></div>`;
+                }
 
                 card.innerHTML = `
                     <div class="w-full sm:w-1/5 flex-shrink-0">
@@ -149,6 +260,7 @@
                         ${englishTitle}
                         <p class="text-sm text-gray-500 mt-1 mb-3">Genres: ${manga.Genres || 'N/A'}</p>
                         <p class="text-gray-400 text-justify">${synopsis}</p>
+                        ${sharedKeywordsHTML}
                     </div>
                 `;
                 resultsContainer.appendChild(card);
@@ -156,7 +268,9 @@
         }
         
         function displayMessage(message) {
-            resultsContainer.innerHTML = ''; // Clear everything
+            resultsContainer.innerHTML = ''; 
+            keywordsContainer.innerHTML = '';
+            // Don't clear theme selection so user can try again
             const messageEl = document.createElement('div');
             messageEl.className = "text-center py-10 bg-gray-800 rounded-lg";
             messageEl.innerHTML = `<p class="text-gray-400">${message}</p>`;
@@ -166,3 +280,4 @@
     </script>
 </body>
 </html>
+
