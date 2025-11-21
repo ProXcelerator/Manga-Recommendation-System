@@ -16,41 +16,58 @@
         .typing-dot:nth-child(1) { animation-delay: -0.32s; }
         .typing-dot:nth-child(2) { animation-delay: -0.16s; }
         @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        /* Glass effect for mobile overlay */
+        .glass { backdrop-filter: blur(4px); }
     </style>
 </head>
 <body class="bg-gray-900 h-screen flex flex-col overflow-hidden">
 
-    <!-- Navbar -->
-    <nav class="bg-gray-800/90 backdrop-blur-md border-b border-gray-700 z-50">
+    <nav class="bg-gray-800/90 backdrop-blur-md border-b border-gray-700 z-50 sticky top-0">
         <div class="container mx-auto flex justify-between items-center p-4">
-            <a href="/" class="text-xl font-bold text-white hover:text-indigo-400 transition-colors">
-                <i class="fas fa-robot mr-2"></i>Manga AI Guide
-            </a>
-            <div class="flex gap-4">
-                <button onclick="resetChat()" class="text-xs text-gray-400 hover:text-white underline ml-4">
-                <i class="fas fa-trash"></i> Reset Memory
+            <div class="flex items-center gap-3">
+                <button id="mobileMenuBtn" class="md:hidden text-gray-300 hover:text-white focus:outline-none">
+                    <i class="fas fa-sliders-h text-xl"></i>
                 </button>
+                
+                <a href="/" class="text-xl font-bold text-white hover:text-indigo-400 transition-colors">
+                    <i class="fas fa-robot mr-2"></i><span class="hidden sm:inline">Manga AI</span> Guide
+                </a>
+            </div>
+            
+            <div class="flex gap-4 text-sm sm:text-base">
                 <a href="/" class="text-gray-300 hover:text-white transition-colors">Home</a>
                 <a href="/genre_search" class="text-gray-300 hover:text-white transition-colors">Genre Search</a>
+                <button onclick="resetChat()" class="text-indigo-400 hover:text-indigo-300 underline">
+                    <i class="fas fa-trash"></i> <span class="hidden sm:inline">Reset</span>
+                </button>
             </div>
         </div>
     </nav>
 
     <div class="flex flex-1 overflow-hidden relative">
-        <!-- SIDEBAR -->
-        <aside class="w-full md:w-1/3 lg:w-1/4 bg-gray-800 border-r border-gray-700 p-6 flex flex-col z-20 shadow-xl">
-            <div class="mb-6">
-                <h2 class="text-xl font-bold text-white mb-2">Configuration</h2>
-                <p class="text-gray-400 text-sm">Tell the AI what you already like.</p>
+        
+        <div id="sidebarOverlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden glass"></div>
+
+        <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-72 bg-gray-800 border-r border-gray-700 p-6 flex flex-col shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:w-1/3 lg:w-1/4 md:shadow-none">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h2 class="text-xl font-bold text-white">Configuration</h2>
+                    <p class="text-gray-400 text-xs">Tell the AI what you like.</p>
+                </div>
+                <button id="closeSidebarBtn" class="md:hidden text-gray-400 hover:text-white">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
             </div>
+
             <div class="mb-6 relative">
                 <label class="block text-sm font-medium text-indigo-400 mb-2">Base Manga</label>
                 <div class="relative">
                     <i class="fas fa-book absolute left-3 top-3 text-gray-500"></i>
-                    <input type="text" id="mangaInput" class="w-full bg-gray-700 text-white rounded-lg pl-10 pr-4 py-2.5 border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all placeholder-gray-500" placeholder="e.g. Berserk" autocomplete="off">
+                    <input type="text" id="mangaInput" class="w-full bg-gray-700 text-white rounded-lg pl-10 pr-4 py-2.5 border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all placeholder-gray-500 text-sm" placeholder="e.g. Berserk" autocomplete="off">
                     <div id="suggestions" class="absolute w-full bg-gray-700 border border-gray-600 rounded-lg mt-1 max-h-60 overflow-y-auto hidden z-50 shadow-2xl"></div>
                 </div>
             </div>
+
             <div class="mb-6">
                 <div class="flex justify-between mb-2">
                     <label class="text-sm font-medium text-indigo-400">Your Rating</label>
@@ -58,51 +75,37 @@
                 </div>
                 <input type="range" id="scoreInput" min="1" max="10" value="10" step="0.5" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
             </div>
+
             <div class="mt-auto bg-gray-700/50 p-4 rounded-lg border border-gray-600">
                 <div class="flex items-center gap-3">
                     <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span class="text-xs text-gray-300">AI Model: <span class="font-mono text-indigo-300">Llama-3.3-70b</span></span>
+                    <span class="text-xs text-gray-300">AI Model: <span class="font-mono text-indigo-300">Llama-3.3</span></span>
                 </div>
             </div>
         </aside>
 
-        <!-- MAIN CHAT AREA -->
-        <main class="flex-1 flex flex-col bg-gray-900 relative">
-            <div id="chatContainer" class="flex-1 p-6 overflow-y-auto chat-scroll space-y-6">
-    <div class="flex gap-4 max-w-3xl">
-        <div class="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0 shadow-lg">
-            <i class="fas fa-robot text-white"></i>
-        </div>
-        
-        <div class="bg-gray-800 p-5 rounded-2xl rounded-tl-none border border-gray-700 shadow-md">
-            <h3 class="text-white font-bold mb-2 text-lg">Welcome to your AI Manga Guide! 👋</h3>
-            <p class="text-gray-300 mb-4 leading-relaxed">
-                I can help you discover your next favorite series using our database. You can try two different methods:
-            </p>
-            <ul class="space-y-3 text-sm text-gray-300">
-                <li class="flex items-start gap-3 bg-gray-900/50 p-3 rounded-lg border border-gray-700/50">
-                    <i class="fas fa-sliders-h mt-1 text-indigo-400"></i>
-                    <div>
-                        <span class="text-indigo-300 font-bold block">Mathematical Match</span>
-                        Select a <strong>Base Manga</strong> in the sidebar and rate it. I'll find titles that are statistically similar.
+        <main class="flex-1 flex flex-col bg-gray-900 relative w-full">
+            <div id="chatContainer" class="flex-1 p-4 md:p-6 overflow-y-auto chat-scroll space-y-6 scroll-smooth">
+                
+                <div class="flex gap-3 md:gap-4 max-w-3xl mx-auto">
+                    <div class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0 shadow-lg">
+                        <i class="fas fa-robot text-white text-sm md:text-base"></i>
                     </div>
-                </li>
-                <li class="flex items-start gap-3 bg-gray-900/50 p-3 rounded-lg border border-gray-700/50">
-                    <i class="fas fa-comment-dots mt-1 text-indigo-400"></i>
-                    <div>
-                        <span class="text-indigo-300 font-bold block">Semantic Search</span>
-                        Ignore the sidebar and just tell me what you want! <br>
-                        <em class="text-gray-500">"I want a cyberpunk thriller with a strong female lead."</em>
+                    <div class="bg-gray-800 p-4 rounded-2xl rounded-tl-none border border-gray-700 shadow-md text-sm md:text-base">
+                        <h3 class="text-white font-bold mb-2">Welcome! 👋</h3>
+                        <p class="text-gray-300 mb-3">Use the <span class="md:hidden font-bold text-indigo-400"><i class="fas fa-sliders-h"></i> Menu</span> to set a Base Manga, or just ask me anything!</p>
+                        <p class="text-gray-400 text-xs italic">Examples: "Find me a cyberpunk thriller" or "I want something like Naruto."</p>
                     </div>
-                </li>
-            </ul>
-        </div>
-    </div>
-</div>
-            <div class="p-4 bg-gray-800 border-t border-gray-700">
-                <form id="chatForm" class="max-w-4xl mx-auto relative flex gap-4">
-                    <input type="text" id="userQuery" class="flex-1 bg-gray-700 text-white rounded-xl px-6 py-4 border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all shadow-inner text-lg placeholder-gray-500" placeholder="Ask for a recommendation..." required>
-                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-105 flex items-center gap-2"><span>Send</span><i class="fas fa-paper-plane"></i></button>
+                </div>
+
+            </div>
+
+            <div class="p-3 md:p-4 bg-gray-800 border-t border-gray-700">
+                <form id="chatForm" class="max-w-4xl mx-auto relative flex gap-2 md:gap-4">
+                    <input type="text" id="userQuery" class="flex-1 bg-gray-700 text-white rounded-xl px-4 py-3 md:px-6 md:py-4 border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all shadow-inner text-base placeholder-gray-500" placeholder="Ask for a recommendation..." required>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 md:px-8 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center transform hover:scale-105">
+                        <i class="fas fa-paper-plane text-lg"></i>
+                    </button>
                 </form>
             </div>
         </main>
@@ -128,6 +131,27 @@
             debounceTimer = setTimeout(() => fetchSuggestions(query), 300);
         });
 
+        // --- MOBILE SIDEBAR LOGIC ---
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+
+        function toggleSidebar() {
+            const isClosed = sidebar.classList.contains('-translate-x-full');
+            if (isClosed) {
+                sidebar.classList.remove('-translate-x-full');
+                sidebarOverlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                sidebarOverlay.classList.add('hidden');
+            }
+        }
+
+        mobileMenuBtn.addEventListener('click', toggleSidebar);
+        closeSidebarBtn.addEventListener('click', toggleSidebar);
+        sidebarOverlay.addEventListener('click', toggleSidebar);
+
         async function fetchSuggestions(query) {
             try {
                 const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
@@ -149,7 +173,7 @@
             const query = userQuery.value.trim();
             const score = scoreInput.value;
 
-            // UPDATED VALIDATION: Allow search if EITHER a manga is selected OR a query is typed
+            // VALIDATION: Allow search if EITHER a manga is selected OR a query is typed
             if (!manga && !query) { 
                 alert("Please select a base manga OR ask a question!"); 
                 userQuery.focus(); 
@@ -157,7 +181,6 @@
             }
 
             // Display user message
-            // If they selected a manga, we show that too. If not, just the query.
             const displayMsg = manga ? `Based on "${manga}": ${query}` : query;
             addMessage(displayMsg, 'user');
             
@@ -193,73 +216,65 @@
             }
         });
 
-
+        // --- RESET FUNCTION ---
         async function resetChat() {
-    if(!confirm("Forget our conversation and start over?")) return;
-    
-    await fetch('/api/reset_chat', { method: 'POST' });
-    
-    // Clear the visual chat log
-    const chatContainer = document.getElementById('chatContainer');
-    chatContainer.innerHTML = ''; // Clear messages
-    
-    // Add back the welcome message (optional, copying your initial HTML)
-    const welcomeDiv = document.createElement('div');
-    welcomeDiv.className = "flex gap-4 max-w-3xl";
-    welcomeDiv.innerHTML = `<div class="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0 shadow-lg"><i class="fas fa-robot text-white"></i></div><div class="bg-gray-800 p-4 rounded-2xl rounded-tl-none border border-gray-700 shadow-md"><p class="text-gray-300">Memory wiped! I'm ready for a new topic.</p></div>`;
-    chatContainer.appendChild(welcomeDiv);
-}
-
-
-        // --- UPDATED FUNCTION: EXTRACT TITLES (Strict Regex) ---
-        async function extractRecommendationsFromText(text) {
-    const extractedRecs = [];
-    // Regex looks for: **#1 Title** or **1. Title** or **#1 Title**
-    const regex = /\*\*(?:#\d+|\d+\.|#\d+)\s+([^*]+)\*\*/g;
-    let match;
-
-    // 1. Parse the AI's text to find the titles
-    while ((match = regex.exec(text)) !== null) {
-        const title = match[1].trim();
-        if (title.length > 2 && title.length < 80) {
-            extractedRecs.push(title);
-        }
-    }
-
-    if (extractedRecs.length === 0) return [];
-
-    console.log("🔍 Found titles in text, querying database:", extractedRecs);
-
-    // 2. Ask your API for details on these specific titles
-    const detailedRecs = await Promise.all(extractedRecs.map(async (title) => {
-        try {
-            // This calls your python '/api/manga_details' route
-            // Which triggers 'db_get_manga_details' in your application.py
-            const response = await fetch(`/api/manga_details?title=${encodeURIComponent(title)}`);
+            if(!confirm("Forget our conversation and start over?")) return;
             
-            if (response.ok) {
-                const data = await response.json();
-                // If your DB returns valid data, use it!
-                if (data && data.Title) {
-                    return data;
+            await fetch('/api/reset_chat', { method: 'POST' });
+            
+            // Clear the visual chat log
+            const chatContainer = document.getElementById('chatContainer');
+            chatContainer.innerHTML = ''; 
+            
+            // Add back the welcome message (Centered with mx-auto)
+            const welcomeDiv = document.createElement('div');
+            welcomeDiv.className = "flex gap-4 max-w-3xl mx-auto";
+            welcomeDiv.innerHTML = `<div class="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0 shadow-lg"><i class="fas fa-robot text-white"></i></div><div class="bg-gray-800 p-4 rounded-2xl rounded-tl-none border border-gray-700 shadow-md"><p class="text-gray-300">Memory wiped! I'm ready for a new topic.</p></div>`;
+            chatContainer.appendChild(welcomeDiv);
+        }
+
+        // --- EXTRACT TITLES & FETCH REAL DB DATA ---
+        async function extractRecommendationsFromText(text) {
+            const extractedRecs = [];
+            const regex = /\*\*(?:#\d+|\d+\.|#\d+)\s+([^*]+)\*\*/g;
+            let match;
+
+            while ((match = regex.exec(text)) !== null) {
+                const title = match[1].trim();
+                if (title.length > 2 && title.length < 80) {
+                    extractedRecs.push(title);
                 }
             }
-        } catch (err) {
-            console.warn(`Database lookup failed for ${title}`, err);
+
+            if (extractedRecs.length === 0) return [];
+
+            console.log("🔍 Found titles in text, querying database:", extractedRecs);
+
+            const detailedRecs = await Promise.all(extractedRecs.map(async (title) => {
+                try {
+                    // Call backend to get real DB data (Image, Score, etc.)
+                    const response = await fetch(`/api/manga_details?title=${encodeURIComponent(title)}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.Title) return data;
+                    }
+                } catch (err) {
+                    console.warn(`Database lookup failed for ${title}`, err);
+                }
+
+                // Fallback if DB fails
+                return {
+                    'Title': title, 
+                    'Score': '?', 
+                    'Thumbnail': 'https://placehold.co/150x225/2d3748/ffffff?text=' + encodeURIComponent(title),
+                    'Synopsis': 'Details not found in database.',
+                    'URL': '#'
+                };
+            }));
+
+            return detailedRecs;
         }
 
-        // 3. Fallback only if your Database doesn't have it
-        return {
-            'Title': title, 
-            'Score': '?', 
-            'Thumbnail': 'https://placehold.co/150x225/2d3748/ffffff?text=' + encodeURIComponent(title),
-            'Synopsis': 'Details not found in database.',
-            'URL': '#'
-        };
-    }));
-
-    return detailedRecs;
-}
         function addMessage(text, sender) {
             const div = document.createElement('div');
             div.className = `flex gap-4 max-w-3xl ${sender === 'user' ? 'ml-auto flex-row-reverse' : ''}`;
@@ -285,7 +300,6 @@
             const wrapper = document.createElement('div');
             wrapper.className = "flex flex-col gap-4 max-w-4xl"; 
             
-            // Convert Markdown bold to HTML bold
             const formattedText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
             
             const textDiv = document.createElement('div');
@@ -295,8 +309,9 @@
 
             if (recommendations && Array.isArray(recommendations) && recommendations.length > 0) {
                 const recsDiv = document.createElement('div');
-                recsDiv.className = "ml-14 flex gap-4 overflow-x-auto pb-4 pt-2 snap-x";
-                
+                // MOBILE LAYOUT: margin-left only on md+, snap-x scrolling
+                recsDiv.className = "ml-0 md:ml-14 flex gap-4 overflow-x-auto pb-4 pt-2 snap-x scroll-smooth";
+
                 recommendations.forEach((manga, index) => {
                     const title = manga['English Title'] || manga['Title'] || "Manga";
                     const img = manga['Thumbnail'] || "https://placehold.co/150x225/2d3748/ffffff?text=Image";
@@ -304,35 +319,35 @@
                     const url = manga['URL'] || '#';
                     const synopsis = manga['Synopsis'] ? manga['Synopsis'].substring(0, 80) + '...' : 'Click to read more.';
                     const recNumber = index + 1;
-                    
-                    // --- NEW LOGIC: Check for NSFW Genres ---
+
+                    // NSFW Safety Logic
                     const genres = (manga['Genres'] || "").toLowerCase();
                     const isNSFW = genres.includes('hentai') || genres.includes('erotica');
-                    
-                    // Apply blur if NSFW (Removed on hover)
-                    // group-hover:blur-0 removes the blur when the user hovers over the CARD (the parent .group)
-                    const blurClass = isNSFW ? "blur-xl group-hover:blur-0 transition-all duration-500 scale-110 group-hover:scale-100" : "";
-                    
-                    // Optional: Add a red "18+" badge if explicit
+                    const blurClass = isNSFW ? "blur-xl" : ""; // Applied by default if NSFW
+
+                    // Badge (Hidden on toggle)
                     const badgeHtml = isNSFW 
-                        ? `<div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-600 text-white px-3 py-1 rounded font-bold shadow-xl z-20 group-hover:opacity-0 transition-opacity pointer-events-none">18+</div>` 
+                        ? `<div class="nsfw-badge absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-600 text-white px-3 py-1 rounded font-bold shadow-xl z-20 pointer-events-none text-[10px] md:text-xs whitespace-nowrap">18+ (Tap)</div>` 
                         : `<div class="absolute top-2 right-2 bg-black/70 text-white text-xs font-bold px-2 py-1 rounded-full z-20">⭐ ${score}</div>`;
 
                     const card = document.createElement('div');
-                    card.className = "min-w-[200px] w-[200px] bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-lg hover:shadow-xl transition-all hover:-translate-y-1 snap-start flex flex-col group";
-                    
+                    // Responsive Width & Snap
+                    card.className = "min-w-[160px] w-[160px] md:min-w-[200px] md:w-[200px] bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-lg snap-center flex flex-col flex-shrink-0";
+
                     card.innerHTML = `
-                        <div class="h-32 bg-gray-900 relative overflow-hidden">
-                            <div class="absolute top-0 left-0 bg-indigo-600 text-white text-sm font-bold px-3 py-1 rounded-br-lg z-20 shadow-md border-r border-b border-indigo-500">#${recNumber}</div>
+                        <div class="h-32 md:h-40 bg-gray-900 relative overflow-hidden cursor-pointer group" 
+                             onclick="this.querySelector('img').classList.toggle('blur-xl'); this.querySelector('.nsfw-badge')?.classList.toggle('hidden')">
                             
-                            <img src="${img}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity ${blurClass}">
+                            <div class="absolute top-0 left-0 bg-indigo-600 text-white text-[10px] md:text-sm font-bold px-3 py-1 rounded-br-lg z-20 shadow-md border-r border-b border-indigo-500">#${recNumber}</div>
+                            
+                            <img src="${img}" class="w-full h-full object-cover transition-all duration-500 ${blurClass}">
                             
                             ${badgeHtml}
                         </div>
                         <div class="p-3 flex flex-col flex-1">
-                            <h4 class="font-bold text-indigo-300 text-sm mb-1 line-clamp-1" title="${title}">${title}</h4>
-                            <p class="text-xs text-gray-400 mb-3 line-clamp-3 flex-1">${synopsis}</p>
-                            <a href="${url}" target="_blank" class="text-xs bg-gray-700 hover:bg-indigo-600 text-center py-2 rounded transition-colors text-white z-30 relative">View Info</a>
+                            <h4 class="font-bold text-indigo-300 text-xs md:text-sm mb-1 line-clamp-1" title="${title}">${title}</h4>
+                            <p class="text-[10px] md:text-xs text-gray-400 mb-2 line-clamp-3 flex-1">${synopsis}</p>
+                            <a href="${url}" target="_blank" class="text-xs bg-gray-700 hover:bg-indigo-600 text-center py-2 rounded transition-colors text-white mt-auto z-30 relative">View Info</a>
                         </div>
                     `;
                     recsDiv.appendChild(card);
