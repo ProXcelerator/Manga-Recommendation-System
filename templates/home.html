@@ -89,7 +89,7 @@
                     <ul class="space-y-2 text-gray-400">
                         <li>Render</li>
                         <li>Git & GitHub</li>
-                        <li></li>REST API</li>
+                        <li></li>AWS</li>
                         <li>Flask</li>
                     </ul>
                 </div>
@@ -99,6 +99,30 @@
         <section id="projects" class="py-16">
             <h2 class="text-3xl font-bold text-center text-white mb-12">Featured Projects</h2>
             <div class="space-y-16">
+
+                <div class="bg-gray-800 rounded-lg shadow-xl p-6 md:p-8 flex flex-col md:flex-row-reverse items-center gap-8">
+                    <div class="md:w-3/5 text-center md:text-left">
+                        <h3 class="text-3xl font-bold text-white mb-3">AI Manga Assistant (RAG Chatbot)</h3>
+                        <p class="text-gray-400 mb-6">An intelligent conversational agent powered by <strong>Llama 3</strong> (via Groq). 
+                    It uses Retrieval-Augmented Generation (RAG) to fetch real manga plots from a PostgreSQL database 
+                    and provides personalized recommendations with context-aware reasoning.</p>
+                        <div class="flex flex-wrap gap-2 mb-6 justify-center md:justify-start">
+                           <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Python</span>
+                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Flask</span>
+                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">RAG</span>
+                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">SQL</span>
+                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Docker</span>
+                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Rest-API</span>
+                        </div>
+                        <div class="flex gap-4 justify-center md:justify-start">
+                            <a href="https://github.com/ProXcelerator/Manga-Recommendation-System" target="_blank" class="px-5 py-2.5 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors">Source Code</a>
+                            <a href="/chatbot" class="px-5 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">Live Demo</a>
+                        </div>
+                    </div>
+                    <div class="md:w-2/5 w-full">
+                         <img src="/static/chat_bot_gif.gif" alt="Manga Genre Finder GIF" class="rounded-lg shadow-lg w-full">
+                    </div>
+                </div>
                 
                 <div class="bg-gray-800 rounded-lg shadow-xl p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
                     <div class="md:w-3/5 text-center md:text-left">
@@ -109,7 +133,6 @@
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Flask</span>
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Scikit-learn</span>
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">SQL</span>
-                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">REST API</span>
                         </div>
                         <div class="flex gap-4 justify-center md:justify-start">
                             <a href="https://github.com/ProXcelerator/Manga-Recommendation-System" target="_blank" class="px-5 py-2.5 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors">Source Code</a>
@@ -122,7 +145,7 @@
                 </div>
 
                 <div class="bg-gray-800 rounded-lg shadow-xl p-6 md:p-8 flex flex-col md:flex-row-reverse items-center gap-8">
-                    <div class="md:w-3/5 text-center md:text-left">
+                    <div class="md:w-3/5 text-centesr md:text-left">
                         <h3 class="text-3xl font-bold text-white mb-3">Genre-to-Genre Based Recommendation</h3>
                         <p class="text-gray-400 mb-6">A streamlined search tool to discover top-rated manga. Users can select up to three genres, and the application fetches and displays relevant recommendations based on a comprehensive dataset.</p>
                         <div class="flex flex-wrap gap-2 mb-6 justify-center md:justify-start">
@@ -130,7 +153,6 @@
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Flask</span>
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Scikit-learn</span>
                             <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">SQL</span>
-                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">REST API</span>
                         </div>
                         <div class="flex gap-4 justify-center md:justify-start">
                             <a href="https://github.com/ProXcelerator/Manga-Recommendation-System" target="_blank" class="px-5 py-2.5 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors">Source Code</a>
@@ -141,31 +163,6 @@
                          <img src="/static/genre_gif.gif" alt="Manga Genre Finder GIF" class="rounded-lg shadow-lg w-full">
                     </div>
                 </div>
-
-                <div class="bg-gray-800 rounded-lg shadow-xl p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
-                    <div class="md:w-3/5 text-center md:text-left">
-                        <h3 class="text-3xl font-bold text-white mb-3">LLM Semantic Search</h3>
-                        <p class="text-gray-400 mb-6">A powerful search engine that goes beyond keywords to understand the contextual meaning of user queries. This project uses Large Language Models to generate vector embeddings, allowing for highly relevant and nuanced search results.</p>
-                        <div class="flex flex-wrap gap-2 mb-6 justify-center md:justify-start">
-                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Python</span>
-                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Flask</span>
-                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">TensorFlow</span>
-                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">Vector DB</span>
-                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">LLM</span>
-                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full">REST API</span>
-                        </div>
-                        <div class="flex gap-4 justify-center md:justify-start">
-                            <a href="https://github.com/ProXcelerator/Manga-Recommendation-System" target="_blank" class="px-5 py-2.5 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors">Source Code</a>
-                            <a href="/synopsis_search" class="px-5 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">Live Demo</a>
-                        </div>
-                    </div>
-                    <div class="md:w-2/5 w-full">
-                        <img src="/static/semantic_search.gif" alt="Semantic Search Demo GIF" class="rounded-lg shadow-lg w-full">
-                    </div>
-                </div>
-                
-            </div>
-        </section>
 
     </main>
     

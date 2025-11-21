@@ -1,254 +1,471 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify, session
 from flask_cors import CORS
-import pandas as pd
-import numpy as np
 import pickle
 import traceback
-from jikanpy import Jikan
-from sentence_transformers import SentenceTransformer
-from keybert import KeyBERT
-
-# --- NEW: SQLAlchemy and PostgreSQL Imports ---
+import psycopg2
 import os
-from sqlalchemy import create_engine, text, Column, Integer, String, Float
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm import declarative_base
-from pgvector.sqlalchemy import Vector
-# --- END NEW ---
+import time
+import numpy as np
+import pandas as pd
+from scipy.sparse import csr_matrix
+from jikanpy import Jikan
+from groq import Groq
+from flask_session import Session  
+import secrets                     
 
-# ---------------------------------------------------------------------------------------------------------------------#
-# ---------------------------------------------- Database Setup -------------------------------------------------------#
-# ---------------------------------------------------------------------------------------------------------------------#
-
-# --- MODIFIED: Prioritize the internal URL from the server environment ---
-# On your Render server, this will automatically use the fast, secure internal URL.
-# The hardcoded string is kept as a fallback for local development.
-DATABASE_URL = os.environ.get(
-    "postgresql://mangadb_z6qn_user:D5HZWxfDzqIaP9UDRWHUCiCBr7ZwCXZB@dpg-d3kjah95pdvs739jfro0-a/mangadb_z6qn", 
-    "postgresql://mangadb_z6qn_user:D5HZWxfDzqIaP9UDRWHUCiCBr7ZwCXZB@dpg-d3kjah95pdvs739jfro0-a.ohio-postgres.render.com/mangadb_z6qn"
-)
-# --- END MODIFIED ---
-
-
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
-
-# Define the Manga table schema to match the one in seed_database.py
-class Manga(Base):
-    __tablename__ = "manga"
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, unique=True, index=True)
-    english_title = Column(String, nullable=True)
-    synopsis = Column(String, nullable=True)
-    genres = Column(String, nullable=True)
-    themes = Column(String, nullable=True)
-    score = Column(Float, nullable=True)
-    thumbnail = Column(String, nullable=True)
-    url = Column(String, nullable=True)
-    embedding = Column(Vector(384))
-
-# ---------------------------------------------------------------------------------------------------------------------#
-# ---------------------------------------------- Flask & Model Setup --------------------------------------------------#
-# ---------------------------------------------------------------------------------------------------------------------#
+# ---------------------------------------------------------------------------#
+# ------------------------- CONFIGURATION & SETUP ---------------------------#
+# ---------------------------------------------------------------------------#
 
 application = Flask(__name__)
-CORS(application) 
+CORS(application)
+
+# --- NEW SESSION CONFIGURATION ---
+application.config["SECRET_KEY"] = secrets.token_hex(16) # Secure key for signing
+application.config["SESSION_TYPE"] = "filesystem"        # Store history in files
+application.config["SESSION_PERMANENT"] = False          # Clear when browser closes
+Session(application)                                     # Initialize session
 
 jikan = Jikan()
 
-print("--- Loading ML Models into Memory... ---")
-# These models are still needed for on-the-fly processing
-st_model = SentenceTransformer('all-MiniLM-L6-v2')
-kw_model = KeyBERT(model=st_model) # Efficiently reuse the model
-print("--- ✅ ML Models Loaded. ---")
+# Database Configuration
+DB_CONFIG = {
+    "dbname": "postgres",
+    "user": "postgres",
+    "password": "bakers",
+    "host": "127.0.0.1",
+    "port": "5431" 
+}
 
-# ---------------------------------------------------------------------------------------------------------------------#
-# ----------------------------------- Helper Functions (Now DB-driven) ------------------------------------------------#
-# ---------------------------------------------------------------------------------------------------------------------#
+# Initialize Groq Client
+api_key = os.environ.get("GROQ_API_KEY")
+client = Groq(api_key=api_key) if api_key else None
 
-import time
+# ---------------------------------------------------------------------------#
+# --------------------------- DATABASE FUNCTIONS ----------------------------#
+# ---------------------------------------------------------------------------#
 
-def fetch_manga_from_jikan_and_save(title_query: str, db_session) -> Manga | None:
-    """
-    Searches Jikan for a manga, generates its embedding, and saves it to the database.
-    """
+def get_db_connection():
     try:
-        print(f"--- JIKAN LOG: Searching for '{title_query}'... ---")
-        time.sleep(0.5)
-        search_results = jikan.search(search_type='manga', query=title_query, page=1)
-        
-        if not search_results.get('data'): return None
-            
-        manga_api = search_results['data'][0]
-
-        # Don't save if synopsis is missing
-        if not manga_api.get('synopsis'): return None
-
-        # Generate embedding for the new synopsis
-        embedding = st_model.encode(manga_api['synopsis'])
-
-        new_manga = Manga(
-            title=manga_api.get('title'),
-            english_title=manga_api.get('title_english'),
-            synopsis=manga_api.get('synopsis'),
-            genres=', '.join([g.get('name') for g in manga_api.get('genres', [])]),
-            themes=', '.join([t.get('name') for t in manga_api.get('themes', [])]),
-            score=manga_api.get('score'),
-            thumbnail=manga_api.get('images', {}).get('jpg', {}).get('image_url'),
-            url=manga_api.get('url'),
-            embedding=embedding
-        )
-        
-        db_session.add(new_manga)
-        db_session.commit()
-        print(f"--- DB LOG: Saved new manga '{new_manga.title}' from Jikan. ---")
-        return new_manga
-
+        conn = psycopg2.connect(**DB_CONFIG)
+        return conn
     except Exception as e:
-        db_session.rollback()
-        print(f"--- JIKAN/DB ERROR: {e} ---")
+        print(f"❌ Error connecting to Database: {e}")
         return None
 
-def recommend_manga_by_synopsis(query_title, selected_themes=[], top_k=5):
-    """
-    Finds similar manga using pgvector for efficiency.
-    """
-    db = SessionLocal()
+def save_manga_to_db(manga_data):
+    conn = get_db_connection()
+    if not conn: return
+
     try:
-        # Find the manga in our database (case-insensitive search)
-        manga = db.query(Manga).filter(Manga.title.ilike(f'%{query_title}%')).first()
+        cur = conn.cursor()
+        norm_title = manga_data['Title'].lower().strip()
+        cur.execute("SELECT id FROM manga_library WHERE normalized_title = %s", (norm_title,))
+        if not cur.fetchone():
+            print(f"💾 Saving new manga '{manga_data['Title']}' to DB...")
+            insert_q = """
+            INSERT INTO manga_library 
+            (title, english_title, normalized_title, url, image_url, score, genres, themes, synopsis)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            cur.execute(insert_q, (
+                manga_data['Title'],
+                manga_data.get('English Title'),
+                norm_title,
+                manga_data.get('URL'),
+                manga_data.get('Thumbnail'),
+                manga_data.get('Score'),
+                manga_data.get('Genres'),
+                manga_data.get('Themes'),
+                manga_data.get('Synopsis')
+            ))
+            conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"❌ DB Save Error: {e}")
 
-        # If not found, fetch from Jikan, save, and then use it
-        if not manga:
-            manga = fetch_manga_from_jikan_and_save(query_title, db)
-
-        if not manga or manga.embedding is None:
-            return []
-
-        # --- Vector Similarity Search using pgvector ---
-        # The `<=>` operator finds the cosine distance (0=identical, 2=opposite)
-        # We find more candidates to re-rank them later.
-        candidates = db.query(Manga).order_by(Manga.embedding.cosine_distance(manga.embedding)).limit(100).all()
-
-        # Re-ranking and filtering logic remains similar
-        final_recommendations = []
-        query_keywords = set(kw[0] for kw in kw_model.extract_keywords(manga.synopsis, top_n=10))
-
-        for candidate in candidates:
-            # Skip self and variations
-            if candidate.id == manga.id or query_title.lower() in candidate.title.lower():
-                continue
-
-            shared_keywords = []
-            if candidate.synopsis:
-                rec_keywords = set(kw[0] for kw in kw_model.extract_keywords(candidate.synopsis, top_n=10))
-                shared_keywords = list(query_keywords.intersection(rec_keywords))
-
-            # If themes selected, only include recommendations that match at least one
-            if selected_themes:
-                if not any(theme in rec_keywords for theme in selected_themes):
-                    continue
-            
-            final_recommendations.append({"manga": candidate, "shared_keywords": shared_keywords})
-
-            if len(final_recommendations) >= top_k:
-                break
+def db_search_titles(query_str):
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cur = conn.cursor()
+        sql = """
+        SELECT title, english_title FROM manga_library 
+        WHERE title ILIKE %s OR english_title ILIKE %s 
+        LIMIT 15
+        """
+        search_term = f"%{query_str}%"
+        cur.execute(sql, (search_term, search_term))
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
         
-        return final_recommendations
+        final_list = []
+        for r in results:
+            if r[1]: final_list.append(r[1])
+            else: final_list.append(r[0])
+        return list(set(final_list))
+    except Exception as e:
+        print(f"Search Error: {e}")
+        return []
 
-    finally:
-        db.close()
+def db_get_manga_details(title):
+    conn = get_db_connection()
+    if not conn: return None
+    try:
+        cur = conn.cursor()
+        norm_title = title.strip().lower()
+        
+        sql = """
+        SELECT title, english_title, url, image_url, score, genres, themes, synopsis 
+        FROM manga_library WHERE normalized_title = %s LIMIT 1
+        """
+        cur.execute(sql, (norm_title,))
+        row = cur.fetchone()
+        
+        if not row:
+            sql_fuzzy = """
+            SELECT title, english_title, url, image_url, score, genres, themes, synopsis 
+            FROM manga_library WHERE title ILIKE %s OR english_title ILIKE %s LIMIT 1
+            """
+            cur.execute(sql_fuzzy, (title, title))
+            row = cur.fetchone()
+            
+        cur.close()
+        conn.close()
+        
+        if row:
+            return {
+                'Title': row[0],
+                'English Title': row[1],
+                'URL': row[2],
+                'Thumbnail': row[3],
+                'Score': row[4],
+                'Genres': row[5],
+                'Themes': row[6],
+                'Synopsis': row[7]
+            }
+        return None
+    except Exception as e:
+        print(f"Details Error: {e}")
+        return None
 
-# ---------------------------------------------------------------------------------------------------------------------#
-# --------------------------------------- WEBSITE & API ROUTES --------------------------------------------------------#
-# ---------------------------------------------------------------------------------------------------------------------#
+# --- UPDATED FUNCTION: SAFE SEARCH ---
+def db_search_by_synopsis(user_query):
+    """
+    Finds manga by keyword but filters out NSFW genres unless explicitly requested.
+    """
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cur = conn.cursor()
+        
+        # 1. Detect if user is explicitly asking for adult content
+        nsfw_triggers = ['hentai', 'erotica', 'porn', 'doujinshi', 'sex', '18+']
+        is_nsfw_request = any(trigger in user_query.lower() for trigger in nsfw_triggers)
+
+        # 2. Construct the Safety Filter
+        # If it's NOT an NSFW request, we exclude those genres
+        safety_clause = ""
+        if not is_nsfw_request:
+            safety_clause = """
+                AND (
+                    COALESCE(genres, '') NOT ILIKE '%Hentai%' 
+                    AND COALESCE(genres, '') NOT ILIKE '%Erotica%'
+                    AND COALESCE(themes, '') NOT ILIKE '%Adult Cast%'
+                )
+            """
+
+        # 3. Run the Search
+        sql = f"""
+        SELECT title, english_title, url, image_url, score, genres, themes, synopsis,
+               ts_rank(
+                   to_tsvector('english', 
+                       COALESCE(title, '') || ' ' || 
+                       COALESCE(synopsis, '') || ' ' || 
+                       COALESCE(genres, '') || ' ' || 
+                       COALESCE(themes, '')
+                   ), 
+                   websearch_to_tsquery('english', %s)
+               ) * (COALESCE(score, 5) / 10.0) as final_rank
+        FROM manga_library
+        WHERE to_tsvector('english', 
+                   COALESCE(title, '') || ' ' || 
+                   COALESCE(synopsis, '') || ' ' || 
+                   COALESCE(genres, '') || ' ' || 
+                   COALESCE(themes, '')
+              ) @@ websearch_to_tsquery('english', %s)
+        {safety_clause}
+        ORDER BY final_rank DESC
+        LIMIT 5;
+        """
+        
+        cur.execute(sql, (user_query, user_query))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        results = []
+        for row in rows:
+            results.append({
+                'Title': row[0],
+                'English Title': row[1],
+                'URL': row[2],
+                'Thumbnail': row[3],
+                'Score': row[4],
+                'Genres': row[5],
+                'Themes': row[6],
+                'Synopsis': row[7]
+            })
+        return results
+
+    except Exception as e:
+        print(f"Smart Search Error: {e}")
+        return []
+
+# ---------------------------------------------------------------------------#
+# -------------------------- LOAD SVD MODELS --------------------------------#
+# ---------------------------------------------------------------------------#
+print("Loading SVD models...")
+try:
+    with open('svd_model.pkl', 'rb') as f:
+        svd_model = pickle.load(f)
+    with open('title_map.pkl', 'rb') as f:
+        title_map = pickle.load(f)
+    with open('title_name_to_id.pkl', 'rb') as f:
+        title_name_to_id = pickle.load(f)
+            
+    print("✅ Models loaded. Running in Database Mode.")
+
+except FileNotFoundError as e:
+    print(f"🔥 FATAL ERROR: Missing model files. {e}")
+
+# ---------------------------------------------------------------------------#
+# -------------------------- LOGIC FUNCTIONS --------------------------------#
+# ---------------------------------------------------------------------------#
+
+def fetch_manga_from_jikan(title_query):
+    try:
+        time.sleep(0.5)
+        search_results = jikan.search(search_type='manga', query=title_query, page=1)
+        if not search_results.get('data'): return None
+        manga = search_results['data'][0]
+        
+        data = {
+            'Title': manga.get('title'),
+            'English Title': manga.get('title_english'),
+            'URL': manga.get('url'),
+            'Thumbnail': manga.get('images', {}).get('jpg', {}).get('image_url'),
+            'Popularity': manga.get('popularity'),
+            'Synopsis': manga.get('synopsis'),
+            'Score': manga.get('score'),
+            'Genres': ', '.join([g['name'] for g in manga.get('genres', [])]),
+            'Themes': ', '.join([t['name'] for t in manga.get('themes', [])])
+        }
+        save_manga_to_db(data)
+        return data
+    except Exception: return None
+
+def get_hybrid_recommendations(user_ratings, n_recommendations=5):
+    valid_ratings = []
+    input_titles = list(user_ratings.keys())
+    
+    for title, score in user_ratings.items():
+        if title in title_name_to_id:
+            valid_ratings.append((title, score))
+        else:
+            for db_title in title_name_to_id.keys():
+                if db_title.lower() == title.lower():
+                     valid_ratings.append((db_title, score))
+                     break
+    
+    final_recs = []
+    excluded = set(t.lower() for t in input_titles)
+    
+    if valid_ratings:
+        user_vec = np.zeros(len(title_map))
+        rated_idx = []
+        for t, s in valid_ratings:
+            idx = title_name_to_id[t]
+            user_vec[idx] = s
+            rated_idx.append(idx)
+            
+        latent_vec = svd_model.transform(csr_matrix(user_vec.reshape(1, -1)))
+        scores = np.dot(latent_vec, svd_model.components_).flatten()
+        scores[rated_idx] = -np.inf 
+        
+        top_idx = np.argsort(scores)[-(n_recommendations*3):][::-1]
+        for i in top_idx:
+            rec_title = title_map.get(i)
+            if rec_title and rec_title.lower() not in excluded:
+                final_recs.append(rec_title)
+                excluded.add(rec_title.lower())
+                if len(final_recs) >= n_recommendations: break
+    return final_recs[:n_recommendations]
+
+def get_full_manga_data_smart(title):
+    db_data = db_get_manga_details(title)
+    if db_data: return db_data
+    print(f"🌍 Fetching '{title}' from Jikan API...")
+    return fetch_manga_from_jikan(title)
+
+# ---------------------------------------------------------------------------#
+# -------------------------- WEB ROUTES -------------------------------------#
+# ---------------------------------------------------------------------------#
 
 @application.route('/')
 def home(): return render_template("home.html")
 
-@application.route('/synopsis_search')
-def synopsis_search_page(): return render_template("synopsis_search.html")
+@application.route('/genre_search')
+def genre_search(): return render_template("genre_search.html", genres=[])
 
-# ---------------------------------------------------------------------------------------------------------------------#
-# -------------------------------------- API ROUTES (Now DB-driven) ---------------------------------------------------#
-# ---------------------------------------------------------------------------------------------------------------------#
+@application.route('/chatbot')
+def chatbot_page(): return render_template("chatbot.html")
 
-@application.route('/api/get_keywords', methods=['POST'])
-def api_get_keywords():
-    db = SessionLocal()
-    try:
-        data = request.get_json()
-        query_title = data.get('title')
-        if not query_title: return jsonify({"error": "A 'title' must be provided."}), 400
+@application.route('/resume')
+def resume(): return render_template("resume.html")
 
-        manga = db.query(Manga).filter(Manga.title.ilike(f'%{query_title}%')).first()
-        synopsis = manga.synopsis if manga else None
+@application.route('/projects')
+def projects(): return render_template("projects.html")
 
-        if not synopsis:
-            # Temporary Jikan fetch without saving for keyword extraction
-            jikan_manga = fetch_manga_from_jikan_and_save(query_title, db)
-            if jikan_manga: synopsis = jikan_manga.synopsis
-        
-        if not synopsis: return jsonify([])
-
-        keywords = [kw[0] for kw in kw_model.extract_keywords(synopsis, top_n=12)]
-        return jsonify(keywords)
-    finally:
-        db.close()
-
-@application.route('/api/synopsis_recommend', methods=['POST'])
-def api_synopsis_recommend():
-    try:
-        data = request.get_json()
-        query_title = data.get('title')
-        selected_themes = data.get('themes', [])
-        if not query_title: return jsonify({"error": "A 'title' must be provided."}), 400
-
-        recommendations = recommend_manga_by_synopsis(query_title, selected_themes=selected_themes, top_k=5)
-
-        if not recommendations: return jsonify([])
-
-        # Format the data for the frontend
-        cleaned_recs = []
-        for rec in recommendations:
-            m = rec['manga']
-            cleaned_recs.append({
-                "Title": m.title,
-                "English Title": m.english_title,
-                "Synopsis": m.synopsis,
-                "Genres": m.genres,
-                "Thumbnail": m.thumbnail,
-                "URL": m.url,
-                "Score": m.score,
-                "shared_keywords": rec['shared_keywords']
-            })
-        
-        return jsonify(cleaned_recs)
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": "An internal error occurred."}), 500
+# ---------------------------------------------------------------------------#
+# -------------------------- API ROUTES -------------------------------------#
+# ---------------------------------------------------------------------------#
 
 @application.route('/api/search', methods=['GET'])
 def search_manga():
-    db = SessionLocal()
     try:
         query = request.args.get('q', '').lower()
         if len(query) < 3: return jsonify([])
+        results = db_search_titles(query)
+        return jsonify(results)
+    except Exception: return jsonify([])
+
+@application.route('/api/manga_details', methods=['GET'])
+def get_manga_details_route():
+    title = request.args.get('title')
+    if not title: return jsonify({"error": "Title required"}), 400
+    
+    data = get_full_manga_data_smart(title)
+    
+    if data:
+        data = {k: (None if pd.isna(v) else v) for k, v in data.items()}
+        return jsonify(data)
+    return jsonify({"error": "Not found"}), 404
+
+@application.route('/api/chat_recommend', methods=['POST'])
+def chat_recommend():
+    try:
+        data = request.get_json()
+        user_manga = data.get('manga')
+        user_score = float(data.get('score', 10))
+        user_query = data.get('query', '')
+
+        # 1. Initialize History if it doesn't exist
+        if 'history' not in session:
+            session['history'] = []
+
+        context_data = []
+        full_rec_objects = []
         
-        # Search both titles using ILIKE for case-insensitive matching
-        results = db.query(Manga).filter(
-            (Manga.title.ilike(f'%{query}%')) | (Manga.english_title.ilike(f'%{query}%'))
-        ).limit(25).all()
+        # --- MODE SELECTION & PROMPT DEFINITION ---
+        
+        if user_manga:
+            # MODE A: Recommendation based on a favorite manga (SVD)
+            print(f"--- Mode A: Recommendation based on '{user_manga}' ---")
+            
+            # Try to get details for the base manga
+            details = db_get_manga_details(user_manga)
+            canon_input = details['Title'] if details else user_manga
+            
+            # Get SVD recommendations
+            rec_titles = get_hybrid_recommendations({canon_input: user_score}, n_recommendations=3)
+            
+            input_synop = details.get('Synopsis') if details else "No synopsis."
+            context_data.append(f"User Input: {user_manga} (Rated {user_score}/10)\nSynopsis: {input_synop}")
+            
+            for i, title in enumerate(rec_titles):
+                d = get_full_manga_data_smart(title)
+                if d:
+                    full_rec_objects.append(d)
+                    context_data.append(f"Candidate #{i+1}: {title}\nSynopsis: {d.get('Synopsis')}")
+            
+            # DEFINE SYSTEM INSTRUCTION FOR MODE A
+            system_instruction = """You are a manga expert. 
+            The user likes a specific manga. Recommend the numbered candidates that are mathematically similar.
+            Use the conversation history to refine your answers.
+            Format titles exactly like: **#1 Title Name**."""
 
-        display_titles = [m.english_title if m.english_title else m.title for m in results]
-        return jsonify(list(set(display_titles))) # Use set to ensure unique titles
-    finally:
-        db.close()
+        else:
+            # MODE B: Semantic/Keyword Search
+            print(f"--- Mode B: Semantic Search for '{user_query}' ---")
+            
+            # Use the "Safe Search" DB function we created earlier
+            rec_objects = db_search_by_synopsis(user_query)
+            
+            for i, d in enumerate(rec_objects):
+                full_rec_objects.append(d)
+                context_data.append(f"Result #{i+1}: {d['Title']}\nSynopsis: {d.get('Synopsis')}")
+            
+            # DEFINE SYSTEM INSTRUCTION FOR MODE B
+            system_instruction = """You are a helpful manga librarian. 
+            The user is describing a story they want to read.
+            I have searched the database and found these matches.
+            
+            GUIDELINES:
+            1. Explain why these specific results match their description.
+            2. Use the conversation history to remember what the user likes.
+            3. Format titles exactly like: **#1 Title Name**.
+            4. SAFETY: Do not recommend explicit/hentai content unless explicitly requested.
+            """
 
-# Run the app
+        # --- CONSTRUCT MESSAGE & HISTORY ---
+
+        # 2. Build the Message for this turn
+        # We combine the User's Query + The DB Search Results into one message
+        current_turn_content = f"""
+        User Query: "{user_query}"
+        
+        Database Matches for this query:
+        {"-"*20}
+        {chr(10).join(context_data)}
+        {"-"*20}
+        """
+
+        # 3. Append to History
+        # If history is empty, add the system prompt first
+        if not session['history']:
+             session['history'].append({"role": "system", "content": system_instruction})
+        
+        session['history'].append({"role": "user", "content": current_turn_content})
+
+        # 4. Send FULL HISTORY to Groq
+        if client:
+            completion = client.chat.completions.create(
+                messages=session['history'], 
+                model="llama-3.3-70b-versatile",
+                temperature=0.7,
+                max_tokens=450
+            )
+            llm_response = completion.choices[0].message.content
+        else:
+            llm_response = "I can't connect to the AI brain right now, but here are your matches!"
+
+        # 5. Save AI Response to History
+        session['history'].append({"role": "assistant", "content": llm_response})
+
+        clean_recs = pd.DataFrame(full_rec_objects).replace({np.nan: None}).to_dict(orient='records')
+        return jsonify({"llm_response": llm_response, "recommendations": clean_recs})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    
+@application.route('/api/reset_chat', methods=['POST'])
+def reset_chat():
+    session.pop('history', None) # Delete the history key
+    return jsonify({"status": "success", "message": "Memory wiped!"})
+
 if __name__ == '__main__':
     application.run(host="localhost", port=5000, debug=True)
-
