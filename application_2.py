@@ -46,11 +46,24 @@ client = Groq(api_key=api_key) if api_key else None
 # ---------------------------------------------------------------------------#
 
 def get_db_connection():
+    # 1. Check if we are on Render (getting the URL from the environment)
+    db_url = os.environ.get("DATABASE_URL")
+    
+    if db_url:
+        try:
+            # Connect using the Render URL
+            conn = psycopg2.connect(db_url)
+            return conn
+        except Exception as e:
+            print(f"❌ Error connecting to Render DB: {e}")
+            return None
+    
+    # 2. Fallback: If no URL is found, use Local Config (Development)
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         return conn
     except Exception as e:
-        print(f"❌ Error connecting to Database: {e}")
+        print(f"❌ Error connecting to Local DB: {e}")
         return None
 
 def save_manga_to_db(manga_data):
