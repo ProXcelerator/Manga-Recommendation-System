@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix
 from jikanpy import Jikan
-from groq import Groq
+from groq import Groq, RateLimitError, APIError
 from flask_session import Session  
 import secrets                     
 
@@ -375,97 +375,112 @@ def chat_recommend():
         user_score = float(data.get('score', 10))
         user_query = data.get('query', '')
 
-        # 1. Initialize History if it doesn't exist
+        # 1. Initialize History
         if 'history' not in session:
             session['history'] = []
+
+        # 2. Safety Check
+        nsfw_triggers = ['hentai', 'erotica', 'porn', 'doujinshi', 'sex', '18+', 'adult']
+        is_nsfw = any(t in user_query.lower() for t in nsfw_triggers) or \
+                  (user_manga and any(t in user_manga.lower() for t in nsfw_triggers))
 
         context_data = []
         full_rec_objects = []
         
-        # --- MODE SELECTION & PROMPT DEFINITION ---
-        
+        # --- DATA GATHERING (Keep your existing logic) ---
         if user_manga:
-            # MODE A: Recommendation based on a favorite manga (SVD)
-            print(f"--- Mode A: Recommendation based on '{user_manga}' ---")
-            
-            # Try to get details for the base manga
+            # Mode A (SVD) Logic...
             details = db_get_manga_details(user_manga)
             canon_input = details['Title'] if details else user_manga
-            
-            # Get SVD recommendations
             rec_titles = get_hybrid_recommendations({canon_input: user_score}, n_recommendations=3)
-            
-            input_synop = details.get('Synopsis') if details else "No synopsis."
+            input_synop = details.get('Synopsis', "No synopsis.") if details else "No synopsis."
+            if is_nsfw: input_synop = "[Explicit content hidden for safety]"
             context_data.append(f"User Input: {user_manga} (Rated {user_score}/10)\nSynopsis: {input_synop}")
             
             for i, title in enumerate(rec_titles):
                 d = get_full_manga_data_smart(title)
                 if d:
                     full_rec_objects.append(d)
-                    context_data.append(f"Candidate #{i+1}: {title}\nSynopsis: {d.get('Synopsis')}")
+                    safe_synopsis = d.get('Synopsis') if not is_nsfw else "Explicit content matching user request."
+                    context_data.append(f"Candidate #{i+1}: {title}\nSynopsis: {safe_synopsis}")
             
-            # DEFINE SYSTEM INSTRUCTION FOR MODE A
             system_instruction = """You are a manga expert. 
-            The user likes a specific manga. Recommend the numbered candidates that are mathematically similar.
-            Use the conversation history to refine your answers.
+            The user likes a specific manga. Recommend the numbered candidates.
             Format titles exactly like: **#1 Title Name**."""
-
         else:
-            # MODE B: Semantic/Keyword Search
-            print(f"--- Mode B: Semantic Search for '{user_query}' ---")
-            
-            # Use the "Safe Search" DB function we created earlier
+            # Mode B (Semantic) Logic...
             rec_objects = db_search_by_synopsis(user_query)
-            
             for i, d in enumerate(rec_objects):
                 full_rec_objects.append(d)
-                context_data.append(f"Result #{i+1}: {d['Title']}\nSynopsis: {d.get('Synopsis')}")
+                safe_synopsis = d.get('Synopsis') if not is_nsfw else "Explicit content matching user request."
+                context_data.append(f"Result #{i+1}: {d['Title']}\nSynopsis: {safe_synopsis}")
             
-            # DEFINE SYSTEM INSTRUCTION FOR MODE B
-            system_instruction = """You are a helpful manga librarian. 
-            The user is describing a story they want to read.
-            I have searched the database and found these matches.
-            
-            GUIDELINES:
-            1. Explain why these specific results match their description.
-            2. Use the conversation history to remember what the user likes.
-            3. Format titles exactly like: **#1 Title Name**.
-            4. SAFETY: Do not recommend explicit/hentai content unless explicitly requested.
-            """
+            if is_nsfw:
+                system_instruction = "You are a manga librarian. List the numbered results neutrally. Format: **#1 Title Name**."
+            else:
+                system_instruction = "You are a manga librarian. Explain why these matches fit. Format: **#1 Title Name**. Do not recommend explicit content."
 
-        # --- CONSTRUCT MESSAGE & HISTORY ---
-
-        # 2. Build the Message for this turn
-        # We combine the User's Query + The DB Search Results into one message
+        # --- CONSTRUCT MESSAGE ---
         current_turn_content = f"""
         User Query: "{user_query}"
-        
-        Database Matches for this query:
+        Database Matches:
         {"-"*20}
         {chr(10).join(context_data)}
         {"-"*20}
         """
 
-        # 3. Append to History
-        # If history is empty, add the system prompt first
         if not session['history']:
              session['history'].append({"role": "system", "content": system_instruction})
         
         session['history'].append({"role": "user", "content": current_turn_content})
 
-        # 4. Send FULL HISTORY to Groq
-        if client:
-            completion = client.chat.completions.create(
-                messages=session['history'], 
-                model="llama-3.3-70b-versatile",
-                temperature=0.7,
-                max_tokens=450
-            )
-            llm_response = completion.choices[0].message.content
-        else:
-            llm_response = "I can't connect to the AI brain right now, but here are your matches!"
+        # --- NEW: MULTI-MODEL BACKUP SYSTEM ---
+        
+        # Priority List:
+        # 1. Llama 3.3 70B (Smartest/Best for Manga reasoning)
+        # 2. Qwen 3 32B (Very strong mid-sized model, great backup)
+        # 3. Llama 3.1 8B (Instant/Fast, good if the others are busy)
+        # 4. Kimi K2 (Good alternative if Llama is down)
+        # 5. GPT-OSS 120B (Heavy duty backup)
+        available_models = [
+            "llama-3.3-70b-versatile",
+            "qwen/qwen3-32b",
+            "llama-3.1-8b-instant",
+            "moonshotai/kimi-k2-instruct",
+            "openai/gpt-oss-120b",
+            "groq/compound-mini"
+        ]
 
-        # 5. Save AI Response to History
+        llm_response = "I'm having trouble connecting to my brain right now. Please try again later."
+        
+        if client:
+            for model_name in available_models:
+                try:
+                    print(f"🤖 Attempting to generate with model: {model_name}...")
+                    completion = client.chat.completions.create(
+                        messages=session['history'], 
+                        model=model_name,
+                        temperature=0.7,
+                        max_tokens=450
+                    )
+                    llm_response = completion.choices[0].message.content
+                    print(f"✅ Success with {model_name}")
+                    break # Exit the loop if successful!
+                
+                except RateLimitError as e:
+                    print(f"⚠️ RATE LIMIT HIT on {model_name}. Switching to backup...")
+                    continue # Try the next model in the list
+                
+                except APIError as e:
+                    print(f"❌ API Error on {model_name}: {e}")
+                    continue # Try next model
+                    
+                except Exception as e:
+                    print(f"🔥 Unexpected Error on {model_name}: {e}")
+                    break # If it's a code error, don't keep retrying
+        else:
+            llm_response = "Server Configuration Error: No API Key found."
+
         session['history'].append({"role": "assistant", "content": llm_response})
 
         clean_recs = pd.DataFrame(full_rec_objects).replace({np.nan: None}).to_dict(orient='records')
