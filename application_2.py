@@ -343,7 +343,7 @@ def resume(): return render_template("resume.html")
 def projects(): return render_template("projects.html")
 
 @application.route('/truchet_pattern')
-def projects(): return render_template("truchet_pattern.html")
+def truchet_pattern(): return render_template("truchet_pattern.html")
 
 # ---------------------------------------------------------------------------#
 # -------------------------- API ROUTES -------------------------------------#
