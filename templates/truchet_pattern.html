@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Truchet Pattern Generator</title>
+    <style>
+        :root {
+            --bg-color: #f0f0f0;
+            --panel-bg: #ffffff;
+            --text-color: #333;
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+        }
+
+        /* Scrollbar styling for controls */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        #controls {
+            width: 340px;
+            background: var(--panel-bg);
+            padding: 20px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+            z-index: 10;
+            flex-shrink: 0;
+        }
+
+        h2 { margin-top: 0; font-size: 1.2rem; }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            border-radius: 4px;
+        }
+
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover { background-color: var(--accent-hover); }
+
+        button.secondary { background-color: #64748b; }
+        button.secondary:hover { background-color: #475569; }
+        
+        button.download-svg { background-color: #ea580c; }
+        button.download-svg:hover { background-color: #c2410c; }
+
+        #canvas-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-image: 
+                linear-gradient(45deg, #ccc 25%, transparent 25%), 
+                linear-gradient(-45deg, #ccc 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #ccc 75%), 
+                linear-gradient(-45deg, transparent 75%, #ccc 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        canvas {
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+            max-width: 95%;
+            max-height: 95%;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- CONTROL PANEL -->
+    <div id="controls">
+        <h2>Truchet Gen</h2>
+        
+        <div class="control-group">
+            <label>Grid Size <span id="val-grid">12</span></label>
+            <input type="range" id="gridSize" min="2" max="50" value="12">
+        </div>
+
+        <div class="control-group">
+            <label>Tile Size <span id="val-tile">60</span></label>
+            <input type="range" id="tileSize" min="20" max="200" value="60">
+        </div>
+
+        <div class="control-group">
+            <label>Concentric Lines <span id="val-lines">3</span></label>
+            <input type="range" id="lineCount" min="1" max="10" value="3">
+        </div>
+
+        <div class="control-group">
+            <label>Line Thickness <span id="val-thick">5</span></label>
+            <input type="range" id="lineThickness" min="1" max="20" value="5">
+        </div>
+
+        <div class="control-group">
+            <label>Spacing <span id="val-space">12</span></label>
+            <input type="range" id="lineSpacing" min="2" max="30" value="12">
+        </div>
+
+        <hr style="width:100%; border:0; border-top:1px solid #eee;">
+
+        <div class="control-group">
+            <label>Break Frequency <span id="val-break">0%</span></label>
+            <input type="range" id="breakFreq" min="0" max="100" value="0">
+        </div>
+
+        <div class="control-group">
+            <label>Cross Frequency <span id="val-cross">0%</span></label>
+            <input type="range" id="crossFreq" min="0" max="100" value="0">
+        </div>
+
+        <div class="control-group">
+            <label>Straight Frequency <span id="val-straight">0%</span></label>
+            <input type="range" id="straightFreq" min="0" max="100" value="0">
+        </div>
+
+        <hr style="width:100%; border:0; border-top:1px solid #eee;">
+
+        <div class="control-group">
+            <label>Stroke Color</label>
+            <input type="color" id="strokeColor" value="#2a2a2a">
+        </div>
+
+        <div class="control-group">
+            <label>Background Color</label>
+            <input type="color" id="bgColor" value="#e8dfd0">
+        </div>
+
+        <div class="control-group">
+             <label>Corner Shape</label>
+             <select id="shapeStyle" style="padding: 8px; border-radius: 4px;">
+                 <option value="round">Rounded (Standard)</option>
+                 <option value="sharp">Sharp (Geometric)</option>
+             </select>
+        </div>
+
+        <button id="regenerate">Regenerate Layout</button>
+        <button id="download" class="secondary">Download PNG</button>
+        <button id="downloadSvg" class="download-svg">Download SVG</button>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="patternCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('patternCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Input Elements
+        const inputs = {
+            gridSize: document.getElementById('gridSize'),
+            tileSize: document.getElementById('tileSize'),
+            lineCount: document.getElementById('lineCount'),
+            thickness: document.getElementById('lineThickness'),
+            spacing: document.getElementById('lineSpacing'),
+            stroke: document.getElementById('strokeColor'),
+            bg: document.getElementById('bgColor'),
+            shape: document.getElementById('shapeStyle'),
+            breakFreq: document.getElementById('breakFreq'),
+            crossFreq: document.getElementById('crossFreq'),
+            straightFreq: document.getElementById('straightFreq')
+        };
+        
+        // State
+        let tileMap = []; 
+
+        // --- SVG HELPER CLASS ---
+        class SVGBuilder {
+            constructor() {
+                this.paths = [];
+                this.currentD = '';
+                this.strokeStyle = '#000000';
+                this.lineWidth = 1;
+                this.lineCap = 'butt';
+            }
+            beginPath() { this.currentD = ''; }
+            moveTo(x, y) { this.currentD += `M ${x.toFixed(2)} ${y.toFixed(2)} `; }
+            lineTo(x, y) { this.currentD += `L ${x.toFixed(2)} ${y.toFixed(2)} `; }
+            arc(x, y, r, startAngle, endAngle) {
+                const startX = x + r * Math.cos(startAngle);
+                const startY = y + r * Math.sin(startAngle);
+                const endX = x + r * Math.cos(endAngle);
+                const endY = y + r * Math.sin(endAngle);
+                if (this.currentD === '') this.moveTo(startX, startY);
+                const largeArcFlag = endAngle - startAngle <= Math.PI ? "0" : "1";
+                const sweepFlag = "1"; 
+                this.currentD += `A ${r.toFixed(2)} ${r.toFixed(2)} 0 ${largeArcFlag} ${sweepFlag} ${endX.toFixed(2)} ${endY.toFixed(2)} `;
+            }
+            stroke() {
+                if (this.currentD.trim() !== '') {
+                    this.paths.push(`<path d="${this.currentD}" stroke="${this.strokeStyle}" stroke-width="${this.lineWidth}" stroke-linecap="${this.lineCap}" fill="none" />`);
+                }
+            }
+            save() {} restore() {} rect() {} clip() {} translate() {}
+        }
+
+        // --- INIT & EVENTS ---
+        function init() {
+            Object.values(inputs).forEach(input => {
+                input.addEventListener('input', () => {
+                    updateLabels();
+                    if (input === inputs.gridSize || input === inputs.crossFreq || input === inputs.straightFreq) {
+                         generateMap();
+                    }
+                    draw();
+                });
+            });
+
+            document.getElementById('regenerate').addEventListener('click', () => {
+                generateMap();
+                draw();
+            });
+
+            document.getElementById('download').addEventListener('click', downloadImage);
+            document.getElementById('downloadSvg').addEventListener('click', downloadSVG);
+            
+            updateLabels();
+            generateMap();
+            draw();
+        }
+
+        function updateLabels() {
+            document.getElementById('val-grid').innerText = inputs.gridSize.value;
+            document.getElementById('val-tile').innerText = inputs.tileSize.value;
+            document.getElementById('val-lines').innerText = inputs.lineCount.value;
+            document.getElementById('val-thick').innerText = inputs.thickness.value;
+            document.getElementById('val-space').innerText = inputs.spacing.value;
+            document.getElementById('val-break').innerText = inputs.breakFreq.value + "%";
+            document.getElementById('val-cross').innerText = inputs.crossFreq.value + "%";
+            document.getElementById('val-straight').innerText = inputs.straightFreq.value + "%";
+        }
+
+        // --- GENERATION LOGIC ---
+        function generateMap() {
+            const cols = parseInt(inputs.gridSize.value);
+            const rows = cols; 
+            const crossThresh = parseInt(inputs.crossFreq.value) / 100;
+            const straightThresh = parseInt(inputs.straightFreq.value) / 100;
+            
+            tileMap = [];
+            for (let i = 0; i < cols * rows; i++) {
+                const isStraight = Math.random() < straightThresh;
+                // Straight tiles are always crosses (Plaid style) to ensure connections
+                const isCross = isStraight ? true : (Math.random() < crossThresh);
+
+                tileMap.push({
+                    rotation: Math.random() > 0.5 ? 1 : 0,
+                    isCross: isCross,
+                    isStraight: isStraight,
+                    seed: Math.random() 
+                });
+            }
+        }
+
+        function draw() {
+            const cols = parseInt(inputs.gridSize.value);
+            const size = parseInt(inputs.tileSize.value);
+            const rows = cols;
+            const width = cols * size;
+            const height = rows * size;
+
+            canvas.width = width;
+            canvas.height = height;
+
+            ctx.fillStyle = inputs.bg.value;
+            ctx.fillRect(0, 0, width, height);
+
+            const thickness = parseInt(inputs.thickness.value);
+            
+            ctx.lineWidth = thickness;
+            ctx.strokeStyle = inputs.stroke.value;
+            ctx.lineCap = 'butt';
+
+            const numLines = parseInt(inputs.lineCount.value);
+            const spacing = parseInt(inputs.spacing.value);
+            const style = inputs.shape.value;
+            const breakThresh = parseInt(inputs.breakFreq.value) / 100;
+
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    const index = y * cols + x;
+                    const tile = tileMap[index];
+                    const posX = x * size;
+                    const posY = y * size;
+
+                    ctx.save();
+                    ctx.translate(posX, posY);
+                    
+                    ctx.beginPath();
+                    ctx.rect(0, 0, size, size);
+                    ctx.clip();
+
+                    const isEvenParity = (x + y) % 2 === 0;
+
+                    drawTile(ctx, tile, size, numLines, spacing, style, breakThresh, isEvenParity, thickness, inputs.bg.value, inputs.stroke.value);
+
+                    ctx.restore();
+                }
+            }
+        }
+
+        function drawTile(ctx, tile, size, lines, gap, style, breakThresh, isEvenParity, thickness, bgColor, strokeColor) {
+            const baseRadius = size / 2;
+            const offsetStart = -((lines - 1) * gap) / 2;
+
+            const drawSegment = (type, r, isMasking) => {
+                const randomVal = Math.abs(Math.sin(tile.seed * 999 + r));
+                if (!isMasking && randomVal < breakThresh) return;
+
+                ctx.beginPath();
+                
+                if (type === 'vert') {
+                    ctx.moveTo(r, 0); ctx.lineTo(r, size);
+                } else if (type === 'horz') {
+                    ctx.moveTo(0, r); ctx.lineTo(size, r);
+                } else if (style === 'round') {
+                    if (type === 'tl') ctx.arc(0, 0, r, 0, Math.PI / 2);
+                    if (type === 'br') ctx.arc(size, size, r, Math.PI, 1.5 * Math.PI);
+                    if (type === 'tr') ctx.arc(size, 0, r, Math.PI / 2, Math.PI);
+                    if (type === 'bl') ctx.arc(0, size, r, 1.5 * Math.PI, 2 * Math.PI);
+                } else {
+                    if (type === 'tl') { ctx.moveTo(0, r); ctx.lineTo(r, 0); }
+                    if (type === 'br') { ctx.moveTo(size - r, size); ctx.lineTo(size, size - r); }
+                    if (type === 'tr') { ctx.moveTo(size - r, 0); ctx.lineTo(size, r); }
+                    if (type === 'bl') { ctx.moveTo(0, size - r); ctx.lineTo(r, size); }
+                }
+
+                if (tile.isCross && !tile.isStraight) {
+                     if (style === 'round') {
+                        if (type === 'cross1') ctx.arc(0, 0, r, 0, Math.PI / 2); 
+                        if (type === 'cross2') ctx.arc(size, size, r, Math.PI, 1.5 * Math.PI);
+                        if (type === 'cross3') ctx.arc(size, 0, r, Math.PI / 2, Math.PI);
+                        if (type === 'cross4') ctx.arc(0, size, r, 1.5 * Math.PI, 2 * Math.PI);
+                    } else {
+                        if (type === 'cross1') { ctx.moveTo(0+offsetStart+r-baseRadius, 0); ctx.lineTo(size+offsetStart+r-baseRadius, size); } 
+                        if (type === 'tl') { ctx.moveTo(0, r); ctx.lineTo(r, 0); }
+                        if (type === 'br') { ctx.moveTo(size - r, size); ctx.lineTo(size, size - r); }
+                        if (type === 'tr') { ctx.moveTo(size - r, 0); ctx.lineTo(size, r); }
+                        if (type === 'bl') { ctx.moveTo(0, size - r); ctx.lineTo(r, size); }
+                    }
+                }
+                
+                ctx.stroke();
+            };
+
+            let groupA = []; 
+            let groupB = []; 
+
+            if (tile.isStraight) {
+                groupA = ['vert'];
+                groupB = ['horz'];
+            } else if (tile.isCross) {
+                groupA = ['tl', 'br'];
+                groupB = ['tr', 'bl'];
+            } else {
+                if (tile.rotation === 0) groupA = ['tl', 'br'];
+                else groupB = ['tr', 'bl'];
+            }
+
+            // Logic Update: Always act as layers to prevent merging
+            // If it's a cross, Layer 1 = BottomGroup, Layer 2 = TopGroup
+            // If it's standard, Layer 1 = First Arc, Layer 2 = Second Arc
+            // This ensures if two arcs overlap in a standard tile, they weave/mask instead of merge.
+            
+            let layers = [];
+
+            if (tile.isCross || tile.isStraight) {
+                // Cross logic: Orthogonal groups
+                let bottomGroup = isEvenParity ? groupA : groupB;
+                let topGroup = isEvenParity ? groupB : groupA;
+                if (bottomGroup.length) layers.push(bottomGroup);
+                if (topGroup.length) layers.push(topGroup);
+            } else {
+                // Standard logic: Two opposing arcs in the same group
+                // We split the active group into two individual layers
+                let activeGroup = (groupA.length > 0) ? groupA : groupB;
+                // activeGroup has 2 elements (e.g. ['tl', 'br'])
+                if (activeGroup.length === 2) {
+                    // We arbitrarily order them or use parity to switch top/bottom for variety
+                    // isEvenParity: (x+y)%2. Using this adds a nice checkerboard variation to the overlapping order
+                    if (isEvenParity) {
+                        layers.push([activeGroup[0]]);
+                        layers.push([activeGroup[1]]);
+                    } else {
+                        layers.push([activeGroup[1]]);
+                        layers.push([activeGroup[0]]);
+                    }
+                } else if (activeGroup.length === 1) {
+                    layers.push(activeGroup);
+                }
+            }
+
+            // Draw Layers
+            layers.forEach((layer, index) => {
+                const isBottom = (index === 0);
+                
+                // Draw Mask first (if it's not the very bottom layer)
+                if (!isBottom) {
+                    ctx.strokeStyle = bgColor;
+                    ctx.lineWidth = thickness + 4;
+                    for (let i = 0; i < lines; i++) {
+                        const r = baseRadius + offsetStart + (i * gap);
+                        layer.forEach(type => drawSegment(type, r, true));
+                    }
+                }
+
+                // Draw Line
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = thickness;
+                for (let i = 0; i < lines; i++) {
+                    const r = baseRadius + offsetStart + (i * gap);
+                    layer.forEach(type => drawSegment(type, r, false));
+                }
+            });
+        }
+
+        function downloadSVG() {
+            const cols = parseInt(inputs.gridSize.value);
+            const size = parseInt(inputs.tileSize.value);
+            const width = cols * size;
+            const height = width; 
+
+            const numLines = parseInt(inputs.lineCount.value);
+            const spacing = parseInt(inputs.spacing.value);
+            const style = inputs.shape.value;
+            const breakThresh = parseInt(inputs.breakFreq.value) / 100;
+            const thickness = parseInt(inputs.thickness.value);
+            const bgColor = inputs.bg.value;
+            const strokeColor = inputs.stroke.value;
+
+            // SCALABLE SVG HEADER: Uses viewBox and preserveAspectRatio
+            let svgContent = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">`;
+            
+            svgContent += `<defs><clipPath id="tileClip"><rect width="${size}" height="${size}" /></clipPath></defs>`;
+            
+            svgContent += `<rect width="100%" height="100%" fill="${bgColor}" />`;
+
+            for (let y = 0; y < cols; y++) {
+                for (let x = 0; x < cols; x++) {
+                    const index = y * cols + x;
+                    const tile = tileMap[index];
+                    const posX = x * size;
+                    const posY = y * size;
+
+                    const isEvenParity = (x + y) % 2 === 0;
+
+                    const svgCtx = new SVGBuilder();
+                    
+                    drawTile(svgCtx, tile, size, numLines, spacing, style, breakThresh, isEvenParity, thickness, bgColor, strokeColor);
+
+                    svgContent += `<g transform="translate(${posX}, ${posY})" clip-path="url(#tileClip)">`;
+                    svgContent += svgCtx.paths.join('\n');
+                    svgContent += `</g>`;
+                }
+            }
+
+            svgContent += `</svg>`;
+
+            const blob = new Blob([svgContent], {type: 'image/svg+xml;charset=utf-8'});
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'truchet_pattern.svg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function downloadImage() {
+            const link = document.createElement('a');
+            link.download = 'truchet-pattern.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+
+        init();
+
+    </script>
+</body>
+</html>
