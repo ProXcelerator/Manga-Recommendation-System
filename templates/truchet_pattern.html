@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Truchet Pattern Generator</title>
+    <title>Truchet Pattern Generator (Outline Mode)</title>
     <style>
         :root {
             --bg-color: #f0f0f0;
@@ -116,9 +116,8 @@
 </head>
 <body>
 
-    <!-- CONTROL PANEL -->
     <div id="controls">
-        <h2>Truchet Gen</h2>
+        <h2>Truchet Outline Gen</h2>
         
         <div class="control-group">
             <label>Grid Size <span id="val-grid">12</span></label>
@@ -165,7 +164,7 @@
         <hr style="width:100%; border:0; border-top:1px solid #eee;">
 
         <div class="control-group">
-            <label>Stroke Color</label>
+            <label>Stroke Color (Preview)</label>
             <input type="color" id="strokeColor" value="#2a2a2a">
         </div>
 
@@ -184,7 +183,12 @@
 
         <button id="regenerate">Regenerate Layout</button>
         <button id="download" class="secondary">Download PNG</button>
-        <button id="downloadSvg" class="download-svg">Download SVG</button>
+        <button id="downloadSvg" class="download-svg">Download Outline SVG</button>
+        <div style="font-size: 0.75rem; color: #666; margin-top: -10px;">
+            SVG Export Legend: <br>
+            <span style="color:black; font-weight:bold;">Black</span> = Pattern<br>
+            <span style="color:red; font-weight:bold;">Red</span> = Overlap/Mask Areas
+        </div>
     </div>
 
     <div id="canvas-container">
@@ -213,33 +217,110 @@
         // State
         let tileMap = []; 
 
-        // --- SVG HELPER CLASS ---
+        // --- UPDATED SVG HELPER CLASS (GEOMETRIC OUTLINES) ---
         class SVGBuilder {
             constructor() {
                 this.paths = [];
-                this.currentD = '';
-                this.strokeStyle = '#000000';
+                this.currentOps = []; // Store Move/Line/Arc commands temporarily
                 this.lineWidth = 1;
-                this.lineCap = 'butt';
+                this.strokeStyle = '#000000';
             }
-            beginPath() { this.currentD = ''; }
-            moveTo(x, y) { this.currentD += `M ${x.toFixed(2)} ${y.toFixed(2)} `; }
-            lineTo(x, y) { this.currentD += `L ${x.toFixed(2)} ${y.toFixed(2)} `; }
+
+            beginPath() { this.currentOps = []; }
+            
+            moveTo(x, y) { 
+                this.currentOps.push({ type: 'move', x: x, y: y }); 
+            }
+            
+            lineTo(x, y) { 
+                this.currentOps.push({ type: 'line', x: x, y: y }); 
+            }
+            
             arc(x, y, r, startAngle, endAngle) {
-                const startX = x + r * Math.cos(startAngle);
-                const startY = y + r * Math.sin(startAngle);
-                const endX = x + r * Math.cos(endAngle);
-                const endY = y + r * Math.sin(endAngle);
-                if (this.currentD === '') this.moveTo(startX, startY);
-                const largeArcFlag = endAngle - startAngle <= Math.PI ? "0" : "1";
-                const sweepFlag = "1"; 
-                this.currentD += `A ${r.toFixed(2)} ${r.toFixed(2)} 0 ${largeArcFlag} ${sweepFlag} ${endX.toFixed(2)} ${endY.toFixed(2)} `;
+                this.currentOps.push({ type: 'arc', x: x, y: y, r: r, start: startAngle, end: endAngle });
             }
+
+            // The Magic: Converts a set of center-line commands into an outline polygon
             stroke() {
-                if (this.currentD.trim() !== '') {
-                    this.paths.push(`<path d="${this.currentD}" stroke="${this.strokeStyle}" stroke-width="${this.lineWidth}" stroke-linecap="${this.lineCap}" fill="none" />`);
+                if (this.currentOps.length === 0) return;
+
+                const w = this.lineWidth;
+                const halfW = w / 2;
+                let dString = "";
+
+                // We handle each operation as an independent shape for robustness in this specific pattern context
+                // (Since we know lines are usually discontinuous or simple segments in Truchet)
+                
+                this.currentOps.forEach((op, index) => {
+                    // Find the start point (either from previous op or this op)
+                    let startX, startY;
+                    if(op.type === 'move') return; // Just sets position for next
+
+                    if (index > 0 && this.currentOps[index-1].type !== 'move') {
+                         // This implies connected lines, but in this specific code, 
+                         // drawSegment usually does Move -> Line or Move -> Arc.
+                         // We will assume segments are isolated for the outline calculation 
+                         // to ensure clean caps.
+                    }
+
+                    // Get Previous Move for start point if this is a Line
+                    let prev = this.currentOps[index-1];
+                    if(!prev) return;
+
+                    if (op.type === 'line') {
+                        // Calculate perpendicular vector for thickness
+                        const dx = op.x - prev.x;
+                        const dy = op.y - prev.y;
+                        const len = Math.sqrt(dx*dx + dy*dy);
+                        if(len === 0) return;
+
+                        const nx = -dy / len; // Normal vector
+                        const ny = dx / len;
+
+                        // 4 Corners of the rectangle
+                        const x1 = prev.x + nx * halfW;
+                        const y1 = prev.y + ny * halfW;
+                        const x2 = op.x + nx * halfW;
+                        const y2 = op.y + ny * halfW;
+                        const x3 = op.x - nx * halfW;
+                        const y3 = op.y - ny * halfW;
+                        const x4 = prev.x - nx * halfW;
+                        const y4 = prev.y - ny * halfW;
+
+                        dString += `M ${x1.toFixed(2)} ${y1.toFixed(2)} L ${x2.toFixed(2)} ${y2.toFixed(2)} L ${x3.toFixed(2)} ${y3.toFixed(2)} L ${x4.toFixed(2)} ${y4.toFixed(2)} Z `;
+                    } 
+                    else if (op.type === 'arc') {
+                        const rOuter = op.r + halfW;
+                        const rInner = op.r - halfW;
+
+                        const sxO = op.x + rOuter * Math.cos(op.start);
+                        const syO = op.y + rOuter * Math.sin(op.start);
+                        const exO = op.x + rOuter * Math.cos(op.end);
+                        const eyO = op.y + rOuter * Math.sin(op.end);
+
+                        const sxI = op.x + rInner * Math.cos(op.start);
+                        const syI = op.y + rInner * Math.sin(op.start);
+                        const exI = op.x + rInner * Math.cos(op.end);
+                        const eyI = op.y + rInner * Math.sin(op.end);
+
+                        const largeArc = (op.end - op.start) <= Math.PI ? 0 : 1;
+                        
+                        // Draw Outer Arc -> Line to Inner -> Draw Inner Arc backwards -> Close
+                        dString += `M ${sxO.toFixed(2)} ${syO.toFixed(2)} `;
+                        dString += `A ${rOuter.toFixed(2)} ${rOuter.toFixed(2)} 0 ${largeArc} 1 ${exO.toFixed(2)} ${eyO.toFixed(2)} `;
+                        dString += `L ${exI.toFixed(2)} ${eyI.toFixed(2)} `;
+                        dString += `A ${rInner.toFixed(2)} ${rInner.toFixed(2)} 0 ${largeArc} 0 ${sxI.toFixed(2)} ${syI.toFixed(2)} `;
+                        dString += `Z `;
+                    }
+                });
+
+                if (dString.trim() !== '') {
+                    // In Outline mode, we use the strokeStyle to determine the class/color
+                    // But the SVG element itself is a thin stroke around the shape
+                    this.paths.push(`<path d="${dString}" stroke="${this.strokeStyle}" stroke-width="1" fill="none" vector-effect="non-scaling-stroke" />`);
                 }
             }
+
             save() {} restore() {} rect() {} clip() {} translate() {}
         }
 
@@ -289,7 +370,6 @@
             tileMap = [];
             for (let i = 0; i < cols * rows; i++) {
                 const isStraight = Math.random() < straightThresh;
-                // Straight tiles are always crosses (Plaid style) to ensure connections
                 const isCross = isStraight ? true : (Math.random() < crossThresh);
 
                 tileMap.push({
@@ -406,27 +486,16 @@
                 else groupB = ['tr', 'bl'];
             }
 
-            // Logic Update: Always act as layers to prevent merging
-            // If it's a cross, Layer 1 = BottomGroup, Layer 2 = TopGroup
-            // If it's standard, Layer 1 = First Arc, Layer 2 = Second Arc
-            // This ensures if two arcs overlap in a standard tile, they weave/mask instead of merge.
-            
             let layers = [];
 
             if (tile.isCross || tile.isStraight) {
-                // Cross logic: Orthogonal groups
                 let bottomGroup = isEvenParity ? groupA : groupB;
                 let topGroup = isEvenParity ? groupB : groupA;
                 if (bottomGroup.length) layers.push(bottomGroup);
                 if (topGroup.length) layers.push(topGroup);
             } else {
-                // Standard logic: Two opposing arcs in the same group
-                // We split the active group into two individual layers
                 let activeGroup = (groupA.length > 0) ? groupA : groupB;
-                // activeGroup has 2 elements (e.g. ['tl', 'br'])
                 if (activeGroup.length === 2) {
-                    // We arbitrarily order them or use parity to switch top/bottom for variety
-                    // isEvenParity: (x+y)%2. Using this adds a nice checkerboard variation to the overlapping order
                     if (isEvenParity) {
                         layers.push([activeGroup[0]]);
                         layers.push([activeGroup[1]]);
@@ -445,8 +514,12 @@
                 
                 // Draw Mask first (if it's not the very bottom layer)
                 if (!isBottom) {
-                    ctx.strokeStyle = bgColor;
-                    ctx.lineWidth = thickness + 4;
+                    // For SVG Builder, we set color to Red to indicate overlap zone
+                    // For Canvas, we use bgColor
+                    const isSvg = ctx instanceof SVGBuilder;
+                    ctx.strokeStyle = isSvg ? 'red' : bgColor;
+                    ctx.lineWidth = thickness + 4; // Mask is wider
+                    
                     for (let i = 0; i < lines; i++) {
                         const r = baseRadius + offsetStart + (i * gap);
                         layer.forEach(type => drawSegment(type, r, true));
@@ -474,15 +547,17 @@
             const style = inputs.shape.value;
             const breakThresh = parseInt(inputs.breakFreq.value) / 100;
             const thickness = parseInt(inputs.thickness.value);
+            // We force Black as the "Stroke" color in SVG output for high contrast, or use input
+            const strokeColor = 'black'; 
             const bgColor = inputs.bg.value;
-            const strokeColor = inputs.stroke.value;
 
             // SCALABLE SVG HEADER: Uses viewBox and preserveAspectRatio
             let svgContent = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">`;
             
             svgContent += `<defs><clipPath id="tileClip"><rect width="${size}" height="${size}" /></clipPath></defs>`;
             
-            svgContent += `<rect width="100%" height="100%" fill="${bgColor}" />`;
+            // Background Rectangle (optional, easier for cutters to remove usually)
+            // svgContent += `<rect width="100%" height="100%" fill="${bgColor}" />`;
 
             for (let y = 0; y < cols; y++) {
                 for (let x = 0; x < cols; x++) {
@@ -509,7 +584,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'truchet_pattern.svg';
+            link.download = 'truchet_pattern_outline.svg';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
